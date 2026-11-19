@@ -172,7 +172,8 @@ class _MediaShellState extends State<MediaShell> {
         key:ValueKey('browser-$browserGeneration'),
         library:widget.library,music:widget.music,
         initialUrl:browserUrl),
-      DownloadScreen(library:widget.library,music:widget.music),
+      DownloadScreen(library:widget.library,
+        music:widget.music,browse:browse),
       MediaCollectionScreen(
         phone:phone,library:widget.library,music:widget.music),
     ];
