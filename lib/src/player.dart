@@ -342,7 +342,11 @@ class _VideoDetailState extends State<VideoDetail> {
               onPressed:() async {
                 try{
                   await video.pause();
-                  await widget.music!.open(currentSource,title:currentTitle);
+                  if(widget.playlist.isNotEmpty){
+                    await widget.music!.playQueue(widget.playlist,index);
+                  }else{
+                    await widget.music!.open(currentSource,title:currentTitle);
+                  }
                   if(context.mounted)Navigator.of(context).pop();
                 }catch(e){
                   if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
