@@ -61,6 +61,10 @@ jobs:
           bash -n scripts/verify_apk.sh
           bash -n scripts/emulator_smoke.sh
           bash -n scripts/build_apk_retry.sh
+          bash -n scripts/test_build_apk_retry.sh
+
+      - name: Test retry policy offline (429, 503, compilation, signing)
+        run: bash scripts/test_build_apk_retry.sh
 
       - name: Configure background downloads, audio, PiP, app icon and signing
         run: python3 scripts/customize_android.py
