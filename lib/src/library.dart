@@ -109,10 +109,10 @@ class MediaLibrary extends ChangeNotifier {
   void setEnhancedDark(bool enabled){enhancedDark=enabled;changed();}
   void setAppLock(bool enabled){appLock=enabled;changed();}
   void setSearchEngine(String engine){searchEngine=engine;changed();}
-  void setMusicSpeed(double speed){musicSpeed=speed.clamp(.5,3);changed();}
-  void setVideoSpeed(double speed){videoSpeed=speed.clamp(.5,3);changed();}
+  void setMusicSpeed(double speed){musicSpeed=speed.clamp(.5,3).toDouble();changed();}
+  void setVideoSpeed(double speed){videoSpeed=speed.clamp(.5,3).toDouble();changed();}
   void setEqualizer(String preset){eqPreset=preset;changed();}
-  void setSubtitleSize(double size){subtitleSize=size.clamp(12,36);changed();}
+  void setSubtitleSize(double size){subtitleSize=size.clamp(12,36).toDouble();changed();}
   void setSleepMinutes(int minutes){sleepMinutes=minutes;changed();}
   bool starred(String url)=>bookmarks.contains(url);
   void toggleBookmark(String url){
@@ -176,7 +176,7 @@ class MediaLibrary extends ChangeNotifier {
   void reorder(Playlist p,int oldIndex,int newIndex){
     if(oldIndex<0||oldIndex>=p.items.length)return;
     if(newIndex>oldIndex)newIndex--;
-    newIndex=newIndex.clamp(0,p.items.length-1);
+    newIndex=newIndex.clamp(0,p.items.length-1).toInt();
     final v=p.items.removeAt(oldIndex);
     p.items.insert(newIndex,v);changed();
   }
