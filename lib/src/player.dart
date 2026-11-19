@@ -52,6 +52,11 @@ class BackgroundMusic extends ChangeNotifier {
     }
   }
   Future<void> setEqualizer(String preset) async{
+    if(preset=='مخصص'){
+      library?.setEqualizer('مخصص');
+      notifyListeners();
+      return;
+    }
     final values=<String,List<double>>{
       'طبيعي':[0,0,0,0,0],
       'Bass':[7,5,2,-1,-2],
@@ -77,11 +82,21 @@ class BackgroundMusic extends ChangeNotifier {
   void setSleepTimer(int minutes){
     _sleepTimer?.cancel();
     library?.setSleepMinutes(minutes);
+    unawaited(player.setVolume(1.0));
     if(minutes>0){
-      _sleepTimer=Timer(Duration(minutes:minutes),(){
-        unawaited(player.pause());
-        library?.setSleepMinutes(0);
-        notifyListeners();
+      var remaining=minutes*60;
+      _sleepTimer=Timer.periodic(const Duration(seconds:1),(timer){
+        remaining--;
+        if(remaining<=10 && remaining>0){
+          unawaited(player.setVolume((remaining/10).clamp(0.0,1.0)));
+        }
+        if(remaining<=0){
+          timer.cancel();
+          unawaited(player.pause());
+          unawaited(player.setVolume(1.0));
+          library?.setSleepMinutes(0);
+          notifyListeners();
+        }
       });
     }
     notifyListeners();
