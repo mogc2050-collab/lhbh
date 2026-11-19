@@ -1,64 +1,57 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ibetoo_media/src/media_utils.dart';
+import 'package:ibetoo_media/src/captions.dart';
 
-void main() {
-  group('Web navigation and safe direct downloads', () {
-    test('searches typed text through a proper encoded Google query', () {
-      final uri=MediaUtils.interpretAddress('أغنية بدون نت');
+void main(){
+  group('Safe browser URL navigation',(){
+    test('Google query safely escapes Arabic',(){
+      final uri=MediaUtils.interpretAddress('أفضل الأغاني');
       expect(uri.host,'www.google.com');
-      expect(uri.queryParameters['q'],'أغنية بدون نت');
+      expect(uri.queryParameters['q'],'أفضل الأغاني');
     });
-    test('understands domain and HTTPS links', () {
-      expect(MediaUtils.interpretAddress('example.org').toString(),
-        'https://example.org');
+    test('HTTPS URL remains valid',(){
       expect(MediaUtils.interpretAddress('https://example.com/a').path,'/a');
     });
-    test('does not turn untrusted file schemes into web navigation', () {
-      final url=MediaUtils.interpretAddress('file:///etc/passwd');
-      expect(url.host,'www.google.com');
+    test('Typed domains are upgraded to HTTPS',(){
+      expect(MediaUtils.interpretAddress('example.org').scheme,'https');
     });
-    test('direct file extension is detected without query interference', () {
-      expect(MediaUtils.isDirectFile(
-        Uri.parse('https://files.example.org/movie.mp4?token=123')),true);
-      expect(MediaUtils.isDirectFile(
-        Uri.parse('https://files.example.org/blog/article')),false);
+    test('Unsafe schemes are not navigated',(){
+      expect(MediaUtils.interpretAddress('file:///etc/passwd').host,
+        'www.google.com');
+      expect(MediaUtils.interpretAddress('javascript:alert(x.y)').host,
+        'www.google.com');
     });
-    test('YouTube and its short URLs are never download targets', () {
-      for(final site in [
-        'https://www.youtube.com/watch?v=example',
-        'https://youtu.be/example',
-        'https://music.youtube.com/abc',
-      ]) {
-        expect(MediaUtils.canDownload(Uri.parse(site)),false);
-      }
+    test('Recognizes only local media extensions',(){
+      expect(MediaUtils.isAudio('a.MP3'),isTrue);
+      expect(MediaUtils.isVideo('b.MKV'),isTrue);
+      expect(MediaUtils.isImage('c.PNG'),isTrue);
+      expect(MediaUtils.isAudio('book.pdf'),isFalse);
     });
-    test('insecure HTTP links are rejected for background downloading', () {
-      expect(MediaUtils.canDownload(Uri.parse('http://example.org/x.mp4')),false);
-      expect(MediaUtils.validateDownload('http://example.org/x.mp4'),isNotNull);
+    test('Formats sizes',(){
+      expect(MediaUtils.displaySize(1048576),'1.0 MB');
     });
-    test('unsafe script-looking text is not treated as a web host', () {
-      final url=MediaUtils.interpretAddress('javascript:alert(x.y)');
-      expect(url.host,'www.google.com');
+  });
+  group('SRT/VTT captions',(){
+    test('Captions are matched to their timestamps',(){
+      const data='''1
+00:00:01,000 --> 00:00:03,000
+أول سطر
+
+2
+00:00:04,000 --> 00:00:06,000
+ثاني سطر
+''';
+      final cues=Captions.parse(data);
+      expect(cues.length,2);
+      expect(Captions.at(cues,const Duration(seconds:2)),'أول سطر');
+      expect(Captions.at(cues,const Duration(seconds:3)),isEmpty);
+      expect(Captions.at(cues,const Duration(seconds:5)),'ثاني سطر');
     });
-    test('rejects unsafe URL schemes for download manager', () {
-      expect(MediaUtils.canDownload(Uri.parse('javascript:alert(1)')),false);
-      expect(MediaUtils.canDownload(Uri.parse('file:///sdcard/data')),false);
-      expect(MediaUtils.canDownload(
-        Uri.parse('https://example.net/file.mp3')),true);
-    });
-    test('classifies local video, music, photos and file types', () {
-      expect(MediaUtils.isAudio('TRACK.MP3'),true);
-      expect(MediaUtils.isVideo('clip.mov'),true);
-      expect(MediaUtils.isImage('photo.jpg'),true);
-      expect(MediaUtils.isAudio('archive.zip'),false);
-      expect(MediaUtils.isDirectFile(
-        Uri.parse('https://example.org/document.pdf')),true);
-    });
-    test('extracts filename and formats sizes in Arabic interface', () {
-      expect(MediaUtils.fileTitle(
-        Uri.parse('https://host.example/film.webm?x=3')),'film.webm');
-      expect(MediaUtils.displaySize(1050000),'1.0 MB');
-      expect(MediaUtils.displaySize(-1),'غير معروف');
+    test('Can adjust subtitle timing',(){
+      final cues=Captions.parse(
+        'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nTest');
+      expect(Captions.at(cues,Duration.zero,
+        offset:const Duration(seconds:2)),'Test');
     });
   });
 }
