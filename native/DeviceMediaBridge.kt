@@ -67,8 +67,14 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
     }
 
     private fun requiredPermissions(): Array<String> {
-        return if (Build.VERSION.SDK_INT >= 33) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO,Manifest.permission.READ_MEDIA_VIDEO,
+        return if (Build.VERSION.SDK_INT >= 34) {
+            arrayOf(Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                Manifest.permission.POST_NOTIFICATIONS)
+        } else if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(Manifest.permission.READ_MEDIA_AUDIO,
+                Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.POST_NOTIFICATIONS)
         } else {
             arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
@@ -79,8 +85,10 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
         fun granted(name: String): Boolean =
             activity.checkSelfPermission(name)==PackageManager.PERMISSION_GRANTED
         return if (Build.VERSION.SDK_INT >= 33) {
+            val selectedVideos=Build.VERSION.SDK_INT >= 34 &&
+                granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
             mapOf("audio" to granted(Manifest.permission.READ_MEDIA_AUDIO),
-                "video" to granted(Manifest.permission.READ_MEDIA_VIDEO),
+                "video" to (granted(Manifest.permission.READ_MEDIA_VIDEO) || selectedVideos),
                 "notifications" to granted(Manifest.permission.POST_NOTIFICATIONS))
         } else {
             val media = granted(Manifest.permission.READ_EXTERNAL_STORAGE)
