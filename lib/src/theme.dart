@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 
 /// iBetoo Media design tokens. One editorial system shared across all views.
 class MediaPalette {
-  static const orange=Color(0xffca4869);
-  static const orangeDeep=Color(0xff963858);
-  static const ink=Color(0xff211d29);
-  static const cream=Color(0xfffaf9fb);
-  static const dark=Color(0xff101017);
-  static const darkSurface=Color(0xff21212b);
-  static const divider=Color(0xffebe7ed);
+  static const orange=Color(0xff3478f6);
+  static const orangeDeep=Color(0xff2053c6);
+  static const ink=Color(0xff171923);
+  static const cream=Color(0xfff5f6fa);
+  static const dark=Color(0xff0e1016);
+  static const darkSurface=Color(0xff1c202a);
+  static const divider=Color(0xffe4e8ef);
   static const muted=Color(0xff84909b);
-  static const mint=Color(0xff24bf9f);
+  static const mint=Color(0xff6675f6);
 }
 
 ThemeData mediaTheme(Brightness brightness) {
@@ -23,7 +23,7 @@ ThemeData mediaTheme(Brightness brightness) {
   final subtitle=night?const Color(0xffa8aeb8):const Color(0xff72767e);
   final divider=night?const Color(0xff2f3740):MediaPalette.divider;
   final outline=RoundedRectangleBorder(
-    borderRadius:BorderRadius.circular(19),
+    borderRadius:BorderRadius.circular(22),
     side:BorderSide(color:divider,width:1));
 
   final scheme=base.copyWith(
@@ -85,7 +85,7 @@ ThemeData mediaTheme(Brightness brightness) {
       modalBackgroundColor:panel,
       showDragHandle:true,
       shape:const RoundedRectangleBorder(
-        borderRadius:BorderRadius.vertical(top:Radius.circular(26))),
+        borderRadius:BorderRadius.vertical(top:Radius.circular(30))),
     ),
     inputDecorationTheme:InputDecorationTheme(
       filled:true,
