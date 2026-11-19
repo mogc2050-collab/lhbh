@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:local_auth/local_auth.dart';
 import 'browser.dart';
 import 'device_media.dart';
-import 'media_collection_screen.dart';
-import 'link_inspector.dart';
-import 'downloads_screen.dart';
 import 'library.dart';
-import 'library_screen.dart';
-import 'media_utils.dart';
+import 'media_collection_screen.dart';
 import 'player.dart';
 import 'theme.dart';
 
@@ -16,458 +13,285 @@ class MediaShell extends StatefulWidget {
   const MediaShell({super.key,required this.library,required this.music});
   final MediaLibrary library;
   final BackgroundMusic music;
-  @override
-  State<MediaShell> createState()=>_MediaShellState();
+  @override State<MediaShell> createState()=>_MediaShellState();
 }
 
-class _MediaShellState extends State<MediaShell> {
+class _MediaShellState extends State<MediaShell>
+    with WidgetsBindingObserver {
   int selected=0;
-  int browserGeneration=0;
-  String browserUrl='https://www.google.com/';
+  final phone=PhoneLibrary();
+  final auth=LocalAuthentication();
   GoogleSignInAccount? account;
-  bool googleBusy=false;
-  bool googleReady=false;
-  final PhoneLibrary phone=PhoneLibrary();
-
-  @override
-  void initState(){
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_){
-      if(mounted)phone.refresh();
-    });
-  }
-  @override
-  void dispose(){
-    phone.dispose();
-    super.dispose();
-  }
-
-  void analyzeLink(){
-    Navigator.of(context).push(MaterialPageRoute<void>(
-      builder:(_)=>SmartLinkScreen(
-        library:widget.library,music:widget.music,browse:browse)));
-  }
-
-  static const webClientId=String.fromEnvironment(
+  bool googleReady=false,googleBusy=false,locked=false;
+  static const googleClient=String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',defaultValue:'');
 
-  void browse(String url){
-    setState((){
-      selected=1;browserUrl=url;browserGeneration++;
+  @override void initState(){
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(mounted){
+        phone.refresh();
+        if(widget.library.appLock)_unlock();
+      }
     });
   }
-
-  Future<void> googleLogin() async {
-    if(webClientId.isEmpty){
-      if(!mounted)return;
-      showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
-        title:const Text('إعداد تسجيل Google'),
-        content:const Text('الكود جاهز لتسجيل الدخول بحساب Google بشكل رسمي، '
-          'لكن لازم تضيف Google OAuth Web Client ID إلى GitHub Actions Secrets، '
-          'وتسجّل بصمة SHA-1 الخاصة بتوقيع Android في Google Cloud. '
-          'بدون ده، تسجيل الدخول مش هيشتغل. '
-          'يوتيوب بحسابك يفتح من متصفح النظام الآمن.'),
-        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),
-          child:const Text('فهمت'))],
-      ));
+  @override void didChangeAppLifecycleState(AppLifecycleState state){
+    if(state==AppLifecycleState.paused && widget.library.appLock){
+      if(mounted)setState(()=>locked=true);
+    }
+    if(state==AppLifecycleState.resumed&&locked){
+      _unlock();
+    }
+  }
+  Future<void> _unlock() async{
+    if(!mounted)return;
+    setState(()=>locked=true);
+    try{
+      final ok=await auth.authenticate(
+        localizedReason:'افتح مكتبة iBetoo Media الخاصة بك',
+        biometricOnly:false);
+      if(ok&&mounted)setState(()=>locked=false);
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('تعذر التحقق من الهوية: $e')));
+    }
+  }
+  Future<void> _toggleLock(bool enabled) async {
+    if(!enabled){widget.library.setAppLock(false);return;}
+    try{
+      final enabled=await auth.isDeviceSupported();
+      if(!enabled)throw StateError('الجهاز لا يدعم حماية الهوية');
+      final ok=await auth.authenticate(
+        localizedReason:'فعّل قفل iBetoo Media بالبصمة أو رمز جهازك',
+        biometricOnly:false);
+      if(ok)widget.library.setAppLock(true);
+    }catch(e){
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('لم يتم تفعيل القفل: $e')));
+    }
+  }
+  Future<void> _googleLogin() async{
+    if(googleClient.isEmpty){
+      _snack('Google OAuth يحتاج Client ID وبصمة توقيع APK في Google Cloud.');
       return;
     }
     setState(()=>googleBusy=true);
     try{
       if(!googleReady){
-        await GoogleSignIn.instance.initialize(serverClientId:webClientId);
+        await GoogleSignIn.instance.initialize(serverClientId:googleClient);
         googleReady=true;
       }
-      final signed=await GoogleSignIn.instance.authenticate();
-      if(mounted)setState(()=>account=signed);
-    }catch(e){
-      if(mounted)ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content:Text('تعذر تسجيل Google: $e')));
-    }finally{if(mounted)setState(()=>googleBusy=false);}
+      final user=await GoogleSignIn.instance.authenticate();
+      if(mounted)setState(()=>account=user);
+    }catch(e){_snack('تعذر تسجيل Google: $e');}
+    finally{if(mounted)setState(()=>googleBusy=false);}
   }
-
-  Future<void> signOut() async {
+  Future<void> _googleLogout() async{
     try{await GoogleSignIn.instance.signOut();}
-    catch(e){debugPrint('Google sign-out: $e');}
+    catch(_){}
     if(mounted)setState(()=>account=null);
   }
-
-  Future<void> youtube() async {
-    final ok=await launchUrl(Uri.parse('https://www.youtube.com/'),
-        mode:LaunchMode.externalApplication);
-    if(!ok && mounted)ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content:Text('متصفح النظام غير متاح.')));
+  void _snack(String message){
+    if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content:Text(message)));
   }
-
-  void settings() {
-    showModalBottomSheet<void>(context:context,
-      isScrollControlled:true,showDragHandle:true,
-      builder:(sheet)=>SafeArea(child:Padding(
-        padding:const EdgeInsets.all(16),
-        child:Column(mainAxisSize:MainAxisSize.min,children:[
-          Text('الإعدادات',style:Theme.of(sheet).textTheme.headlineSmall
-            ?.copyWith(fontWeight:FontWeight.w900)),
-          const SizedBox(height:15),
-          AnimatedBuilder(animation:widget.library,
-            builder:(ctx,_)=>SwitchListTile.adaptive(
-              value:widget.library.darkMode,
-              onChanged:widget.library.setTheme,
-              title:const Text('الوضع الليلي'),
-              subtitle:const Text('تغيير الألوان بين النهار والليل'),
-              secondary:const Icon(Icons.dark_mode_outlined),
-            )),
-          ListTile(
-            leading:const Icon(Icons.account_circle_outlined),
-            title:Text(account==null?'تسجيل Google الرسمي':
-              'مرحبًا ${account!.displayName ?? account!.email}'),
-            subtitle:Text(account==null ?
-              'يتطلب إعداد OAuth في حساب Google Cloud' : account!.email),
-            trailing:googleBusy ? const CircularProgressIndicator() :
-              const Icon(Icons.chevron_left),
-            onTap:googleBusy?null:() {
-              Navigator.pop(sheet);
-              if(account==null){googleLogin();}
-              else{signOut();}
-            }),
-          AnimatedBuilder(animation:phone,builder:(ctx,_)=>ListTile(
-            leading:Icon(phone.notificationsGranted?
-              Icons.notifications_active_outlined:
-              Icons.notifications_off_outlined),
-            title:const Text('تفعيل إشعارات التنزيل والتشغيل'),
-            subtitle:Text(phone.notificationsGranted?
-              'مسموح بها من أندرويد':
-              'اضغط لطلب صلاحية الإشعارات وسائط الهاتف'),
-            trailing:const Icon(Icons.chevron_left),
-            onTap:()async{
-              await phone.refresh(askPermissions:true);
-              if(ctx.mounted)Navigator.pop(ctx);
-            },
-          )),
-          ListTile(leading:const Icon(Icons.play_circle_outline),
-            title:const Text('افتح يوتيوب وسجّل دخولك في المتصفح'),
-            subtitle:const Text('تسجيل آمن خارج WebView؛ إعلانات يوتيوب تتبع يوتيوب.'),
-            onTap:(){Navigator.pop(sheet);youtube();}),
-          ListTile(leading:const Icon(Icons.history),
-            title:const Text('امسح سجل تصفح التطبيق'),
-            onTap:(){
-              widget.library.clearHistory();
-              Navigator.pop(sheet);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content:Text('تم حذف السجل المحفوظ محليًا.')));
-            }),
-          const Divider(),
-          const Text('iBetoo Media مفيهوش أي شبكة إعلانات أو تتبع إعلاني داخل التطبيق. '
-            'لكن المواقع الخارجية، ومنها يوتيوب، ليها إعلاناتها وشروطها. '
-            'التنزيل بيشتغل للروابط المباشرة المصرّح بها فقط، '
-            'والمكتبة بتتعامل مع الملفات اللي اخترتها أو نزّلتها أنت.',
-            textAlign:TextAlign.center,
-            style:TextStyle(fontSize:12,height:1.7)),
-        ]),
-      )));
+  @override void dispose(){
+    WidgetsBinding.instance.removeObserver(this);
+    phone.dispose();
+    super.dispose();
   }
-
-  @override
-  Widget build(BuildContext context) {
-    final pages=[
-      _HomeFeed(
-        library:widget.library,
-        browse:browse,
-        youtube:()=>browse('https://m.youtube.com/'),
-        settings:settings,
-        smartLink:analyzeLink,
-        phone:phone,
-        google:googleLogin,
-        account:account,
-        googleBusy:googleBusy,
-        openDownloads:()=>setState(()=>selected=2),
-        openLibrary:()=>setState(()=>selected=3),
-      ),
-      BrowserScreen(
-        key:ValueKey('browser-$browserGeneration'),
-        library:widget.library,music:widget.music,
-        initialUrl:browserUrl),
-      DownloadScreen(library:widget.library,
-        music:widget.music,browse:browse),
-      MediaCollectionScreen(
-        phone:phone,library:widget.library,music:widget.music),
-    ];
-    return Scaffold(
-      body:IndexedStack(index:selected,children:pages),
-      bottomNavigationBar:Column(mainAxisSize:MainAxisSize.min,children:[
-        MiniMusic(music:widget.music,
-          open:()=>Navigator.of(context).push(MaterialPageRoute(
-            builder:(_)=>AudioDetail(music:widget.music)))),
-        NavigationBar(
-          selectedIndex:selected,
-          onDestinationSelected:(v)=>setState(()=>selected=v),
-          destinations:const [
-            NavigationDestination(icon:Icon(Icons.home_outlined),
-              selectedIcon:Icon(Icons.home),label:'الرئيسية'),
-            NavigationDestination(icon:Icon(Icons.language_outlined),
-              selectedIcon:Icon(Icons.language),label:'المتصفح'),
-            NavigationDestination(icon:Icon(Icons.download_outlined),
-              selectedIcon:Icon(Icons.download),label:'التنزيلات'),
-            NavigationDestination(icon:Icon(Icons.perm_media_outlined),
-              selectedIcon:Icon(Icons.perm_media),label:'المكتبة'),
-          ],
-        ),
+  @override Widget build(BuildContext context){
+    return Scaffold(body:Stack(children:[
+      IndexedStack(index:selected,children:[
+        BrowserScreen(library:widget.library),
+        MediaCollectionScreen(
+          phone:phone,library:widget.library,music:widget.music),
+        _MediaSettings(
+          library:widget.library,phone:phone,music:widget.music,
+          account:account,onLogin:_googleLogin,onLogout:_googleLogout,
+          googleBusy:googleBusy,onLockChange:_toggleLock),
       ]),
+      if(locked)Positioned.fill(child:ColoredBox(
+        color:Theme.of(context).scaffoldBackgroundColor,
+        child:Center(child:Column(
+          mainAxisSize:MainAxisSize.min,children:[
+            const Icon(Icons.lock_outline,size:72,
+              color:MediaPalette.orange),
+            const SizedBox(height:20),
+            const Text('مكتبتك محمية',
+              style:TextStyle(fontSize:23,fontWeight:FontWeight.w900)),
+            const SizedBox(height:16),
+            FilledButton.icon(onPressed:_unlock,
+              icon:const Icon(Icons.fingerprint),
+              label:const Text('فتح القفل')),
+          ]))),
+      ),
+    ]),
+      bottomNavigationBar:locked?null:Column(
+        mainAxisSize:MainAxisSize.min,children:[
+          MiniMusic(music:widget.music,open:()=>Navigator.push(
+            context,MaterialPageRoute<void>(
+              builder:(_)=>AudioDetail(music:widget.music)))),
+          NavigationBar(selectedIndex:selected,
+            onDestinationSelected:(v)=>setState(()=>selected=v),
+            destinations:const [
+              NavigationDestination(
+                icon:Icon(Icons.language_outlined),
+                selectedIcon:Icon(Icons.language),label:'المتصفح'),
+              NavigationDestination(
+                icon:Icon(Icons.perm_media_outlined),
+                selectedIcon:Icon(Icons.perm_media),label:'المكتبة'),
+              NavigationDestination(
+                icon:Icon(Icons.tune_outlined),
+                selectedIcon:Icon(Icons.tune),label:'الإعدادات'),
+            ]),
+        ]),
     );
   }
 }
 
-class _HomeFeed extends StatefulWidget {
-  const _HomeFeed({
-    required this.library,required this.browse,required this.youtube,
-    required this.settings,required this.google,
-    required this.smartLink,required this.phone,
-    required this.account,required this.googleBusy,
-    required this.openDownloads,required this.openLibrary,
-  });
+class _MediaSettings extends StatelessWidget {
+  const _MediaSettings({required this.library,required this.phone,
+    required this.music,required this.account,required this.onLogin,
+    required this.onLogout,required this.googleBusy,
+    required this.onLockChange});
   final MediaLibrary library;
   final PhoneLibrary phone;
-  final ValueChanged<String> browse;
-  final VoidCallback youtube,settings,google,smartLink,openDownloads,openLibrary;
+  final BackgroundMusic music;
   final GoogleSignInAccount? account;
+  final VoidCallback onLogin,onLogout;
   final bool googleBusy;
-  @override
-  State<_HomeFeed> createState()=>_HomeFeedState();
-}
+  final Future<void> Function(bool) onLockChange;
 
-class _HomeFeedState extends State<_HomeFeed> {
-  final query=TextEditingController();
-  @override
-  void dispose(){query.dispose();super.dispose();}
-
-  @override
-  Widget build(BuildContext context)=>Scaffold(
-    appBar:AppBar(title:Row(children:[
-      Container(width:34,height:34,
-        alignment:Alignment.center,
-        decoration:BoxDecoration(
-          color:MediaPalette.orange,
-          borderRadius:BorderRadius.circular(10)),
-        child:const Icon(Icons.play_arrow_rounded,color:Colors.white,size:27)),
-      const SizedBox(width:8),
-      const Text('iBetoo',style:TextStyle(fontSize:25,
-        fontWeight:FontWeight.w900,letterSpacing:-.6)),
-      const SizedBox(width:5),
-      Text('MEDIA',style:TextStyle(fontSize:10,
-        fontWeight:FontWeight.w900,color:MediaPalette.orange)),
-    ]),
-      actions:[
-        IconButton(tooltip:'الوضع الليلي',
-          icon:Icon(widget.library.darkMode?
-            Icons.light_mode_outlined:Icons.dark_mode_outlined),
-          onPressed:()=>widget.library.setTheme(!widget.library.darkMode)),
-        IconButton(tooltip:'الإعدادات',icon:const Icon(Icons.settings_outlined),
-          onPressed:widget.settings),
-      ],
-    ),
-    body:AnimatedBuilder(animation:widget.library,builder:(ctx,_) =>
-      ListView(padding:const EdgeInsets.fromLTRB(17,18,17,24),children:[
-        Container(
-          padding:const EdgeInsets.all(21),
-          decoration:BoxDecoration(
-            color:Theme.of(context).colorScheme.surfaceContainerLow,
-            borderRadius:BorderRadius.circular(26),
-            border:Border.all(color:Theme.of(context).dividerColor)),
-          child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-            const Text('كل وسائطك. مكان واحد.',
-              style:TextStyle(fontSize:27,fontWeight:FontWeight.w900,height:1.3)),
-            const SizedBox(height:7),
-            Text('تصفح. احفظ روابط الملفات المسموح بها. شغّل موسيقاك '
-              'وفيديوهاتك بعيدًا عن زحمة التطبيقات.',
-              style:Theme.of(context).textTheme.bodyMedium?.copyWith(
-                height:1.65)),
-            const SizedBox(height:18),
-            TextField(
-              controller:query,
-              textInputAction:TextInputAction.search,
-              onSubmitted:widget.browse,
-              decoration:InputDecoration(
-                hintText:'ابحث في الويب أو الصق رابط',
-                prefixIcon:const Icon(Icons.search),
-                suffixIcon:IconButton(
-                  icon:const Icon(Icons.arrow_forward_rounded),
-                  onPressed:()=>widget.browse(query.text)),
-              ),
-            ),
-          ]),
+  void _notice(BuildContext ctx,String message){
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content:Text(message)));
+  }
+  Future<void> _export(BuildContext context) async{
+    try{
+      await library.exportToUser();
+      if(context.mounted)_notice(context,'تم فتح نافذة حفظ النسخة الاحتياطية');
+    }catch(e){if(context.mounted)_notice(context,'تعذر تصدير النسخة: $e');}
+  }
+  Future<void> _restore(BuildContext context) async{
+    try{
+      await library.importFromUser();
+      if(context.mounted)_notice(context,'تم استعادة إعدادات المكتبة والقوائم');
+    }catch(e){if(context.mounted)_notice(context,'تعذر استعادة النسخة: $e');}
+  }
+  @override Widget build(BuildContext context)=>AnimatedBuilder(
+    animation:library,builder:(ctx,_)=>Scaffold(
+      appBar:AppBar(title:const Text('الإعدادات والخصوصية')),
+      body:ListView(padding:const EdgeInsets.fromLTRB(14,8,14,45),children:[
+        _header('المظهر'),
+        SwitchListTile.adaptive(
+          title:const Text('الوضع الليلي'),
+          secondary:const Icon(Icons.dark_mode_outlined),
+          value:library.darkMode,onChanged:library.setTheme),
+        SwitchListTile.adaptive(
+          title:const Text('تظليل مواقع الويب'),
+          subtitle:const Text('تجريبي، وقد يؤثر على مظهر الصور'),
+          secondary:const Icon(Icons.contrast),
+          value:library.enhancedDark,onChanged:library.setEnhancedDark),
+        _header('المتصفح'),
+        ListTile(title:const Text('محرك البحث'),
+          subtitle:Text(library.searchEngine),
+          trailing:DropdownButton<String>(
+            value:library.searchEngine,
+            underline:const SizedBox.shrink(),
+            items:const ['Google','DuckDuckGo','Bing','Brave']
+              .map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),
+            onChanged:(v){if(v!=null)library.setSearchEngine(v);}),
         ),
-        const SizedBox(height:13),
-        InkWell(onTap:widget.smartLink,
-          borderRadius:BorderRadius.circular(22),
-          child:Container(
-            padding:const EdgeInsets.all(16),
-            decoration:BoxDecoration(
-              gradient:const LinearGradient(
-                begin:Alignment.topRight,end:Alignment.bottomLeft,
-                colors:[Color(0xffff782e),Color(0xffbb390f)]),
-              borderRadius:BorderRadius.circular(22)),
-            child:Row(children:[
-              Container(width:55,height:55,
-                decoration:BoxDecoration(
-                  color:Colors.white.withValues(alpha:.18),
-                  borderRadius:BorderRadius.circular(15)),
-                child:const Icon(Icons.content_paste_search_rounded,
-                  color:Colors.white,size:31)),
-              const SizedBox(width:12),
-              const Expanded(child:Column(
-                crossAxisAlignment:CrossAxisAlignment.start,children:[
-                  Text('انسخ الرابط وحلّله',
-                    style:TextStyle(color:Colors.white,
-                      fontWeight:FontWeight.w900,fontSize:18)),
-                  SizedBox(height:3),
-                  Text('الصق رابط • اعرف النوع • شغّل أو نزّل',
-                    style:TextStyle(color:Colors.white,fontSize:11)),
-                ])),
-              const Icon(Icons.arrow_back_ios_new_rounded,
-                color:Colors.white,size:18),
-            ]),
-          ),
+        ListTile(title:const Text('مسح سجل تصفح التطبيق'),
+          leading:const Icon(Icons.history),
+          trailing:const Icon(Icons.delete_outline),
+          onTap:(){
+            library.clearHistory();
+            _notice(context,'تم مسح السجل');
+          }),
+        _header('ملفات الجهاز'),
+        ListTile(
+          leading:const Icon(Icons.security),
+          title:const Text('صلاحيات الصوت والفيديو والصور'),
+          subtitle:Text('صوت ${phone.audioGranted?"✓":"×"} • '
+            'فيديو ${phone.videoGranted?"✓":"×"} • '
+            'صور ${phone.imageGranted?"✓":"×"}'),
+          trailing:const Icon(Icons.chevron_left),
+          onTap:()=>phone.refresh(askPermissions:true)),
+        ListTile(
+          leading:const Icon(Icons.notifications_outlined),
+          title:const Text('إشعارات تشغيل الوسائط'),
+          subtitle:Text(phone.notificationsGranted?'مفعّلة':'تحتاج إذنًا'),
+          onTap:()=>phone.refresh(askPermissions:true)),
+        _header('الصوت والفيديو'),
+        ListTile(title:const Text('معادل الصوت Equalizer'),
+          subtitle:Text(library.eqPreset),
+          trailing:DropdownButton<String>(
+            value:library.eqPreset,
+            underline:const SizedBox.shrink(),
+            items:const ['طبيعي','Bass','Rock','صوت بشري','Cinema']
+              .map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),
+            onChanged:(v)async{
+              if(v==null)return;
+              try{await music.setEqualizer(v);}
+              catch(e){if(context.mounted)_notice(context,
+                'المعادل غير مدعوم على هذا الجهاز: $e');}
+            }),
         ),
-        const SizedBox(height:23),
-        _section('مواقعك المفضلة'),
-        const SizedBox(height:10),
-        Wrap(spacing:10,runSpacing:10,children:[
-          _website('YouTube',Icons.play_circle_fill,Colors.red,
-            widget.youtube,'فتح آمن بالحساب'),
-          _website('Google',Icons.search_rounded,
-            const Color(0xff4384f2),
-            ()=>widget.browse('https://www.google.com/'),'بحث'),
-          _website('Vimeo',Icons.ondemand_video_rounded,
-            const Color(0xff1ab7ea),
-            ()=>widget.browse('https://vimeo.com/'),'فيديو'),
-          _website('Archive',Icons.account_balance_rounded,
-            const Color(0xff8c6e47),
-            ()=>widget.browse('https://archive.org/'),'مكتبة عامة'),
-          _website('SoundCloud',Icons.graphic_eq_rounded,
-            MediaPalette.orange,
-            ()=>widget.browse('https://soundcloud.com/'),'صوت'),
-          _website('Dailymotion',Icons.tv,
-            const Color(0xff2978eb),
-            ()=>widget.browse('https://www.dailymotion.com/'),'مشاهدة'),
-        ]),
-        const SizedBox(height:25),
-        _section('ماذا تريد تعمل دلوقتي؟'),
-        const SizedBox(height:12),
-        AnimatedBuilder(animation:widget.phone,builder:(ctx,_)=>Card(
-          child:ListTile(
-            contentPadding:const EdgeInsets.all(12),
-            leading:Container(width:49,height:49,
-              decoration:BoxDecoration(
-                color:MediaPalette.orange.withValues(alpha:.13),
-                borderRadius:BorderRadius.circular(14)),
-              child:const Icon(Icons.library_music,
-                color:MediaPalette.orange,size:27)),
-            title:const Text('ملفات الموبايل تلقائيًا',
-              style:TextStyle(fontWeight:FontWeight.w900)),
-            subtitle:Text(
-              '${widget.phone.audio.length} صوت • '
-              '${widget.phone.videos.length} فيديو  '
-              '${widget.phone.audioGranted||widget.phone.videoGranted?"":"• يحتاج صلاحية"}'),
-            trailing:const Icon(Icons.chevron_left),
-            onTap:widget.openLibrary,
-          ),
-        )),
-
-        const SizedBox(height:12),
-        Row(children:[
-          Expanded(child:_actionCard(
-            Icons.cloud_download_outlined,'تنزيل ملف',
-            'روابط مباشرة وخلفية',
-            widget.openDownloads)),
-          const SizedBox(width:10),
-          Expanded(child:_actionCard(
-            Icons.folder_copy_outlined,'ملفاتي',
-            'صور وأغاني وفيديو',
-            widget.openLibrary)),
-        ]),
-        const SizedBox(height:23),
-        _section('تصفحك الخاص'),
-        const SizedBox(height:8),
-        if(widget.library.bookmarks.isEmpty)
-          const Padding(padding:EdgeInsets.symmetric(vertical:13),
-            child:Text('لسه مفيش مفضلة. احفظ أي موقع من المتصفح.'))
-        else for(final url in widget.library.bookmarks.take(5))
-          _linkRow(url,Icons.bookmark,()=>widget.browse(url)),
-        const SizedBox(height:12),
-        _section('آخر زيارة'),
-        const SizedBox(height:8),
-        if(widget.library.history.isEmpty)
-          const Padding(padding:EdgeInsets.symmetric(vertical:13),
-            child:Text('هنا هتظهر المواقع اللي زرتها.'))
-        else for(final url in widget.library.history.take(6))
-          _linkRow(url,Icons.history,()=>widget.browse(url)),
-        const SizedBox(height:22),
-        Card(child:ListTile(
-          leading:const Icon(Icons.account_circle_rounded,
-            color:MediaPalette.orange,size:32),
-          title:Text(widget.account==null?
-            'ربط حساب Google':'أهلًا ${widget.account!.displayName}'),
-          subtitle:Text(widget.account==null?
-            'تفعيل الحساب يتطلب إعداد OAuth الرسمي.':'متصل بحساب التطبيق'),
-          trailing:widget.googleBusy?const CircularProgressIndicator():
-            const Icon(Icons.chevron_left),
-          onTap:widget.google)),
-        const SizedBox(height:18),
-        const Center(child:Text('بدون إعلانات داخل التطبيق • وسائطك تحت تحكمك',
-          style:TextStyle(color:Colors.grey,fontSize:11))),
+        ListTile(title:const Text('سرعة تشغيل الصوت'),
+          subtitle:Text('${library.musicSpeed.toStringAsFixed(2)}×')),
+        Slider(value:library.musicSpeed,min:.5,max:3,divisions:10,
+          onChanged:(v)=>music.setSpeed(v)),
+        ListTile(title:const Text('حجم نص الترجمة'),
+          subtitle:Text('${library.subtitleSize.round()} نقطة')),
+        Slider(value:library.subtitleSize,min:12,max:36,divisions:12,
+          onChanged:library.setSubtitleSize),
+        ListTile(title:const Text('مؤقت النوم'),
+          subtitle:Text(library.sleepMinutes==0?'غير مفعل':
+            '${library.sleepMinutes} دقيقة'),
+          trailing:DropdownButton<int>(
+            value:library.sleepMinutes,underline:const SizedBox.shrink(),
+            items:const [0,15,30,45,60,90,120]
+              .map((v)=>DropdownMenuItem(
+                value:v,child:Text(v==0?'إيقاف':'$v د')))
+              .toList(),
+            onChanged:(v){if(v!=null)music.setSleepTimer(v);}),
+        ),
+        _header('الخصوصية والحماية'),
+        SwitchListTile.adaptive(title:const Text('قفل التطبيق'),
+          subtitle:const Text('بصمة أو رمز قفل الجهاز عند الرجوع للتطبيق'),
+          value:library.appLock,
+          secondary:const Icon(Icons.fingerprint),
+          onChanged:onLockChange),
+        ListTile(
+          leading:const Icon(Icons.backup_outlined),
+          title:const Text('تصدير بيانات المكتبة'),
+          subtitle:const Text('القوائم والمفضلة والتقدم والإعدادات، بدون نسخ الوسائط نفسها'),
+          onTap:()=>_export(context)),
+        ListTile(
+          leading:const Icon(Icons.restore),
+          title:const Text('استيراد نسخة احتياطية'),
+          onTap:()=>_restore(context)),
+        _header('حساب Google'),
+        ListTile(
+          leading:const Icon(Icons.account_circle),
+          title:Text(account?.displayName??'تسجيل الدخول'),
+          subtitle:Text(account?.email??'يتطلب OAuth مُعدًا في Google Cloud'),
+          trailing:googleBusy?const CircularProgressIndicator():
+            Icon(account==null?Icons.login:Icons.logout),
+          onTap:googleBusy?null:account==null?onLogin:onLogout),
+        const SizedBox(height:15),
+        const Padding(padding:EdgeInsets.all(12),
+          child:Text('iBetoo Media لا يحتوي على مدير تنزيلات. المتصفح يستخدم '
+            'Android WebView، ولا يدّعي دعم إضافات Chrome أو الحظر الكامل '
+            'لمتتبعات المواقع. كل قوائم الوسائط محفوظة على الجهاز.',
+            textAlign:TextAlign.center,
+            style:TextStyle(color:Colors.grey,height:1.6,fontSize:12))),
       ]),
-    ),
-  );
-
-  Widget _section(String title)=>Text(title,
-    style:const TextStyle(fontSize:19,fontWeight:FontWeight.w900));
-
-  Widget _website(String title,IconData icon,Color color,
-      VoidCallback onTap,String caption)=>InkWell(
-    onTap:onTap,borderRadius:BorderRadius.circular(17),
-    child:Container(width:103,height:107,
-      padding:const EdgeInsets.all(10),
-      decoration:BoxDecoration(
-        color:Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius:BorderRadius.circular(17),
-        border:Border.all(color:Theme.of(context).dividerColor)),
-      child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
-        Icon(icon,color:color,size:32),
-        const SizedBox(height:7),
-        Text(title,maxLines:1,
-          style:const TextStyle(fontWeight:FontWeight.w800,fontSize:13)),
-        Text(caption,maxLines:1,
-          style:const TextStyle(color:Colors.grey,fontSize:9)),
-      ])),
-  );
-
-  Widget _actionCard(IconData icon,String title,String subtitle,
-      VoidCallback onTap)=>InkWell(
-    onTap:onTap,borderRadius:BorderRadius.circular(20),
-    child:Container(
-      height:133,padding:const EdgeInsets.all(14),
-      decoration:BoxDecoration(
-        borderRadius:BorderRadius.circular(20),
-        gradient:LinearGradient(colors:[
-          MediaPalette.orange.withValues(alpha:.13),
-          MediaPalette.orange.withValues(alpha:.035)]),
-        border:Border.all(color:MediaPalette.orange.withValues(alpha:.3))),
-      child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-        Icon(icon,color:MediaPalette.orange,size:30),
-        const Spacer(),
-        Text(title,style:const TextStyle(fontSize:17,
-          fontWeight:FontWeight.w900)),
-        Text(subtitle,style:const TextStyle(fontSize:11)),
-      ])),
-  );
-  Widget _linkRow(String url,IconData icon,VoidCallback onTap)=>
-    ListTile(
-      contentPadding:EdgeInsets.zero,dense:true,
-      leading:Icon(icon,color:MediaPalette.orange,size:19),
-      title:Text(Uri.tryParse(url)?.host ?? url,
-        maxLines:1,overflow:TextOverflow.ellipsis),
-      subtitle:Text(url,maxLines:1,overflow:TextOverflow.ellipsis,
-        textDirection:TextDirection.ltr),
-      onTap:onTap,
-      trailing:const Icon(Icons.arrow_outward_rounded,size:17),
-    );
+    ));
+  Widget _header(String title)=>Padding(
+    padding:const EdgeInsets.fromLTRB(8,18,8,9),
+    child:Text(title,style:const TextStyle(
+      fontSize:17,fontWeight:FontWeight.w900,color:MediaPalette.orange)));
 }
