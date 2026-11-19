@@ -63,7 +63,7 @@ class _MediaCollectionScreenState extends State<MediaCollectionScreen> {
             title:media.name,music:widget.music,library:widget.library,
             startIndex:index<0?0:index,playlist:tracks(videos))));
       }else if(media.image){
-        final bytes=await widget.phone.artwork(media.uri);
+        final bytes=await widget.phone.imagePreview(media.uri);
         if(bytes==null||bytes.isEmpty)throw StateError(
           'تعذر قراءة الصورة من الهاتف');
         if(mounted)Navigator.of(context).push(MaterialPageRoute<void>(
