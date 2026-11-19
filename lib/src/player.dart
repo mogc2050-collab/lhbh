@@ -65,7 +65,7 @@ class BackgroundMusic extends ChangeNotifier {
       final params=await equalizer.parameters;
       for(var i=0;i<params.bands.length;i++){
         final position=(i*gains.length/params.bands.length).floor()
-          .clamp(0,gains.length-1);
+          .clamp(0,gains.length-1).toInt();
         final gain=gains[position].clamp(params.minDecibels,params.maxDecibels);
         await params.bands[i].setGain(gain);
       }
@@ -454,14 +454,14 @@ class _VideoDetailState extends State<VideoDetail> {
       final total=controller!.value.duration.inMilliseconds;
       final target=controller!.value.position.inMilliseconds+
         (update.delta.dx*total/size.width).round();
-      controller!.seekTo(Duration(milliseconds:target.clamp(0,total)));
+      controller!.seekTo(Duration(milliseconds:target.clamp(0,total).toInt()));
     }else{
       if(update.localPosition.dx<size.width/2){
         brightness=(brightness-update.delta.dy/size.height)
-          .clamp(.12,1.0);
+          .clamp(.12,1.0).toDouble();
       }else{
         final next=(controller!.value.volume-update.delta.dy/size.height)
-          .clamp(0.0,1.0);
+          .clamp(0.0,1.0).toDouble();
         controller!.setVolume(next);
       }
       setState((){});
