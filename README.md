@@ -1,15 +1,16 @@
-# iBetoo Media
+# iBetoo Media 2.0
 
-Android Flutter browser + direct authorized download manager + local audio/video/photo library.
+Native Android + Flutter browser, smart link analysis, media library and background player.
 
-- Arabic RTL, dark/light, clean editorial-inspired UI.
-- Browser tabs, search, bookmarks, local history and direct file links.
-- Android DownloadManager continues in background, shows OS notifications and progress.
-- Background audio lock-screen media controls via just_audio_background.
-- Local video with optional PiP; local photos; Android file picker.
-- Google Sign-In for the app only after OAuth client/SHA-1 setup. YouTube account via secure system browser.
-- No in-app ad SDKs, but **third-party sites including YouTube may display ads**.
-- Does not extract copyrighted/DRM-protected video or block YouTube ads.
-- GitHub Actions manual build only, direct APK artifact, emulator smoke test.
+**What changed:**
+- Android MediaStore native bridge lists indexed phone music and videos (after granular runtime user consent), with search, filters and sorting.
+- Audio queues: next/previous, shuffle, repeat, lock-screen controls and system media notifications.
+- Device video playback through content URIs, a next-video playlist, PiP and an explicit handoff to background audio for supported local media.
+- Smart paste analyzer recognizes direct HTTPS media using HEAD metadata, downloads original files using DownloadManager, and presents genuine HLS quality variants for playback.
+- Improved coherent editorial UI, dark/light themes and in-app browsing including public YouTube pages.
+- Android permissions requested for audio, video and notifications; no all-files unrestricted permission.
+- New native permissions/MediaStore bridge is checked by manual GitHub Actions before building an APK.
 
-See README_AR.md for full instructions and limitations.
+**Boundaries:** YouTube/DRM downloading, video-to-MP3 conversion, invented quality labels and ad blocking on external sites are not implemented. Google sign-in inside WebView can be restricted. HLS source variants are for playback, not MP4 download. Some formats/codecs may be unsupported; background audio handoff from phone content currently needs a temporary file and has a 180 MB per-track limit. Not validated on a device yet.
+
+**Build:** GitHub Actions > Build iBetoo Media APK - Manual Only > Run workflow on main. The workflow runs Dart analysis/tests, Kotlin/Gradle release build, APK checks and emulator startup before publishing a direct APK. No local tool installation required.
