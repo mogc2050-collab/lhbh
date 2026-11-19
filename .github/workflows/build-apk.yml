@@ -60,9 +60,17 @@ jobs:
           python3 -m py_compile scripts/customize_android.py
           bash -n scripts/verify_apk.sh
           bash -n scripts/emulator_smoke.sh
+          bash -n scripts/build_apk_retry.sh
 
       - name: Configure background downloads, audio, PiP, app icon and signing
         run: python3 scripts/customize_android.py
+
+      # Flutter creates android/ during this workflow, so install Gradle
+      # caching only AFTER the wrapper and Android project have been generated.
+      - name: Restore and persist Gradle wrapper and Maven dependencies
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Verify Gradle daemon uses Java 21
         shell: bash
@@ -107,15 +115,11 @@ jobs:
       - name: Run media app unit tests
         run: flutter test
 
-      - name: Build universal signed APK
+      - name: Build universal signed APK with bounded network-only retries
         shell: bash
         env:
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-        run: |
-          flutter build apk --release \
-            --build-number "$((10000 + GITHUB_RUN_NUMBER))" \
-            --dart-define="GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID"
-          test -s build/app/outputs/flutter-apk/app-release.apk
+        run: bash scripts/build_apk_retry.sh
 
       - name: Verify signature, package, native runtime and integrity
         run: bash scripts/verify_apk.sh build/app/outputs/flutter-apk/app-release.apk
