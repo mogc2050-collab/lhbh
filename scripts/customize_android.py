@@ -1,6 +1,6 @@
 """Generate Android host for iBetoo Browser + Offline Media Library.
 The Flutter Android project is recreated by CI, so this script is idempotent
-and deliberately contains no DownloadManager permission or implementation.
+and supports system-managed HTTPS file downloads.
 """
 from pathlib import Path
 import re
@@ -73,10 +73,12 @@ drawable.mkdir(parents=True,exist_ok=True)
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
   android:width="108dp" android:height="108dp"
   android:viewportWidth="108" android:viewportHeight="108">
-  <path android:fillColor="#BA4164"
-    android:pathData="M20,6 L88,6 Q102,6 102,20 L102,88 Q102,102 88,102 L20,102 Q6,102 6,88 L6,20 Q6,6 20,6 Z"/>
+  <path android:fillColor="#3478F6"
+    android:pathData="M22,6 L86,6 Q102,6 102,22 L102,86 Q102,102 86,102 L22,102 Q6,102 6,86 L6,22 Q6,6 22,6 Z"/>
   <path android:fillColor="#FFFFFFFF"
-    android:pathData="M35,27 L75,54 L35,81 Z"/>
+    android:pathData="M50,44 L61,44 L61,79 L50,79 Z"/>
+  <path android:fillColor="#FFFFFFFF"
+    android:pathData="M55.5,26 m-7,0 a7,7 0,1 0,14 0 a7,7 0,1 0,-14 0"/>
 </vector>
 ""","utf-8")
 xml=res/"xml"
@@ -131,4 +133,4 @@ elif groovy.exists():
     if count!=1:raise SystemExit("Release signing assignment not found")
     groovy.write_text(gradle,"utf-8")
 else:raise SystemExit("Android Gradle app template unavailable")
-print("iBetoo Media: offline library, media playback, permissions, biometric lock, browser. No downloader.")
+print("iBetoo Media: browser, offline library, playback, biometric lock, and Android downloads.")
