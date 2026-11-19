@@ -53,6 +53,20 @@ https://github.com/mogc2050-collab/lhbh
 - `MEDIA_KEY_ALIAS`
 - `MEDIA_KEY_PASSWORD`
 
+## إصلاح Build بتاريخ 19 نوفمبر 2026
+
+تم تحديد السبب من سجل GitHub Actions رقم 44522171128: فحص Android Lint الخاص بـ `video_player_android` سقط في `java.util.List.removeLast()` بسبب تشغيل JDK 17 مع أداة Android Gradle Plugin 9.3.
+
+إعداد البناء اليدوي أصبح يستخدم:
+- Java 21 (Temurin) مع فحص مبكر للإصدار المطلوب.
+- Flutter 3.50.0 مثبتًا بدلاً من اتباع أحدث stable تلقائيًا.
+- Ubuntu 24.04 لتقليل تغيّر بيئة المحاكي.
+- اختبار Dart وFlutter ثم فحص APK والتوقيع ثم تثبيته على محاكي Android قبل اعتبار التشغيل ناجحًا.
+
+لم يتم تعطيل Android Lint أو حذف مكتبة مشغل الفيديو. لا يزال التشغيل يدويًا فقط عبر `workflow_dispatch`. **اعمل Run workflow جديدًا على main**، وليس Re-run لمحاولة قديمة لأنها مرتبطة بتحديث قديم من Git.
+
+وجود الإصلاح على GitHub لا يساوي نجاح بناء APK؛ يلزم أن تصل المحاولة الجديدة إلى خطوة `Test actual installation and app launch` بنجاح.
+
 ## حالة التحقق
 
 هذه الملفات مكتوبة ومراجعة لكن **لم يُشغّل Flutter/Android SDK في بيئة التأليف**؛ تجميع APK الحقيقي واختبار المحاكي يحدث فقط عندما تشغّل Actions بنفسك. أي فشل ظاهر في التحليل/البناء يستلزم إصلاح الكود قبل القول إن التطبيق جاهز.
