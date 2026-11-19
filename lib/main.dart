@@ -28,7 +28,7 @@ class IbetooMediaApp extends StatefulWidget {
 }
 
 class _IbetooMediaAppState extends State<IbetooMediaApp> {
-  late final BackgroundMusic music=BackgroundMusic();
+  late final BackgroundMusic music=BackgroundMusic(library:widget.library);
 
   @override
   void dispose() {
