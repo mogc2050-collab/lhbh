@@ -2,17 +2,21 @@ package com.ibetoo.ibetoo_media
 
 import android.Manifest
 import android.app.Activity
+import android.app.NotificationManager
+import android.content.Intent
 import android.content.ContentUris
 import android.database.ContentObserver
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Size
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
@@ -51,7 +55,23 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
         channel.setMethodCallHandler { call,result ->
             when(call.method){
                 "permissions" -> result.success(permissionState())
-                "requestPermissions" -> requestPermissions(result)
+                "requestPermissions" -> requestPermissions(
+                    call.argument<List<String>>("kinds") ?: listOf("audio","video","image"),result)
+                "openAppSettings" -> {
+                    activity.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:"+activity.packageName)))
+                    result.success(null)
+                }
+                "openNotificationSettings" -> {
+                    val intent=if(Build.VERSION.SDK_INT>=26)
+                        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE,activity.packageName)
+                            .putExtra(Settings.EXTRA_CHANNEL_ID,"com.ibetoo.media.audio")
+                    else Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:"+activity.packageName))
+                    activity.startActivity(intent)
+                    result.success(null)
+                }
                 "scan","thumbnail","imagePreview","audioCache","duplicates" -> {
                     executor.execute {
                         try{
@@ -74,23 +94,33 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
             }
         }
     }
-    private fun requiredPermissions():Array<String> {
-        if(Build.VERSION.SDK_INT>=34)return arrayOf(
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.READ_MEDIA_VIDEO,
-            Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            Manifest.permission.POST_NOTIFICATIONS)
-        if(Build.VERSION.SDK_INT>=33)return arrayOf(
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.READ_MEDIA_VIDEO,
-            Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.POST_NOTIFICATIONS)
-        return arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    private fun requiredPermissions(kinds:List<String>):List<String> {
+        val permissions=mutableListOf<String>()
+        if(Build.VERSION.SDK_INT>=33){
+            if("audio" in kinds)permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            if("video" in kinds)permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            if("image" in kinds)permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            if(Build.VERSION.SDK_INT>=34 && ("image" in kinds || "video" in kinds))
+                permissions.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+            if("notifications" in kinds)
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else if(kinds.any{it in listOf("audio","video","image")}){
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        return permissions
     }
     private fun granted(name:String)=activity.checkSelfPermission(name)==
         PackageManager.PERMISSION_GRANTED
     private fun permissionState():Map<String,Boolean>{
+        var notifications=if(Build.VERSION.SDK_INT>=24)
+            activity.getSystemService(NotificationManager::class.java)
+                .areNotificationsEnabled() else true
+        if(Build.VERSION.SDK_INT>=26){
+            val channel=activity.getSystemService(NotificationManager::class.java)
+                .getNotificationChannel("com.ibetoo.media.audio")
+            if(channel!=null&&channel.importance==NotificationManager.IMPORTANCE_NONE)
+                notifications=false
+        }
         if(Build.VERSION.SDK_INT>=33){
             val selected=Build.VERSION.SDK_INT>=34 &&
                 granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
@@ -98,17 +128,20 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
                 "audio" to granted(Manifest.permission.READ_MEDIA_AUDIO),
                 "video" to (granted(Manifest.permission.READ_MEDIA_VIDEO)||selected),
                 "image" to (granted(Manifest.permission.READ_MEDIA_IMAGES)||selected),
-                "notifications" to granted(Manifest.permission.POST_NOTIFICATIONS))
+                "videoLimited" to (selected&&!granted(Manifest.permission.READ_MEDIA_VIDEO)),
+                "imageLimited" to (selected&&!granted(Manifest.permission.READ_MEDIA_IMAGES)),
+                "notifications" to notifications)
         }
         val media=granted(Manifest.permission.READ_EXTERNAL_STORAGE)
         return mapOf("audio" to media,"video" to media,"image" to media,
-            "notifications" to true)
+            "notifications" to notifications)
     }
-    private fun requestPermissions(result:MethodChannel.Result){
+    private fun requestPermissions(kinds:List<String>,result:MethodChannel.Result){
         if(pendingPermission!=null){
             result.error("BUSY","Permission request already running",null);return
         }
-        val pending=requiredPermissions().filter{!granted(it)}
+        val pending=requiredPermissions(kinds).filter{!granted(it)||
+            (Build.VERSION.SDK_INT>=34&&it==Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)}
         if(pending.isEmpty()){result.success(permissionState());return}
         pendingPermission=result
         activity.requestPermissions(pending.toTypedArray(),requestCode)
@@ -191,7 +224,7 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
         var bitmap:Bitmap?=null
         if(Build.VERSION.SDK_INT>=29){
             try{bitmap=activity.contentResolver.loadThumbnail(
-                uri,Size(192,192),null)}catch(_:Exception){}
+                uri,Size(384,384),null)}catch(_:Exception){}
         }
         if(bitmap==null){
             val retriever=MediaMetadataRetriever()
@@ -209,6 +242,19 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
     }
     private fun imagePreview(raw:String):ByteArray {
         val uri=checkedUri(raw)
+        if(Build.VERSION.SDK_INT>=28){
+            val bitmap=ImageDecoder.decodeBitmap(
+                ImageDecoder.createSource(activity.contentResolver,uri)) { decoder,info,_ ->
+                decoder.allocator=ImageDecoder.ALLOCATOR_SOFTWARE
+                val factor=minOf(1.0,2048.0/maxOf(info.size.width,info.size.height))
+                decoder.setTargetSize(maxOf(1,(info.size.width*factor).toInt()),
+                    maxOf(1,(info.size.height*factor).toInt()))
+            }
+            val bytes=ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG,90,bytes)
+            bitmap.recycle()
+            return bytes.toByteArray()
+        }
         val bounds=BitmapFactory.Options()
         bounds.inJustDecodeBounds=true
         activity.contentResolver.openInputStream(uri)?.use{
