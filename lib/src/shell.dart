@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'browser.dart';
+import 'device_media.dart';
+import 'media_collection_screen.dart';
+import 'link_inspector.dart';
 import 'downloads_screen.dart';
 import 'library.dart';
 import 'library_screen.dart';
@@ -24,6 +27,27 @@ class _MediaShellState extends State<MediaShell> {
   GoogleSignInAccount? account;
   bool googleBusy=false;
   bool googleReady=false;
+  final PhoneLibrary phone=PhoneLibrary();
+
+  @override
+  void initState(){
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_){
+      if(mounted)phone.refresh();
+    });
+  }
+  @override
+  void dispose(){
+    phone.dispose();
+    super.dispose();
+  }
+
+  void analyzeLink(){
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder:(_)=>SmartLinkScreen(
+        library:widget.library,music:widget.music,browse:browse)));
+  }
+
   static const webClientId=String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',defaultValue:'');
 
@@ -134,8 +158,10 @@ class _MediaShellState extends State<MediaShell> {
       _HomeFeed(
         library:widget.library,
         browse:browse,
-        youtube:youtube,
+        youtube:()=>browse('https://m.youtube.com/'),
         settings:settings,
+        smartLink:analyzeLink,
+        phone:phone,
         google:googleLogin,
         account:account,
         googleBusy:googleBusy,
@@ -147,7 +173,8 @@ class _MediaShellState extends State<MediaShell> {
         library:widget.library,music:widget.music,
         initialUrl:browserUrl),
       DownloadScreen(library:widget.library,music:widget.music),
-      LibraryScreen(library:widget.library,music:widget.music),
+      MediaCollectionScreen(
+        phone:phone,library:widget.library,music:widget.music),
     ];
     return Scaffold(
       body:IndexedStack(index:selected,children:pages),
@@ -178,12 +205,14 @@ class _HomeFeed extends StatefulWidget {
   const _HomeFeed({
     required this.library,required this.browse,required this.youtube,
     required this.settings,required this.google,
+    required this.smartLink,required this.phone,
     required this.account,required this.googleBusy,
     required this.openDownloads,required this.openLibrary,
   });
   final MediaLibrary library;
+  final PhoneLibrary phone;
   final ValueChanged<String> browse;
-  final VoidCallback youtube,settings,google,openDownloads,openLibrary;
+  final VoidCallback youtube,settings,google,smartLink,openDownloads,openLibrary;
   final GoogleSignInAccount? account;
   final bool googleBusy;
   @override
@@ -251,6 +280,38 @@ class _HomeFeedState extends State<_HomeFeed> {
             ),
           ]),
         ),
+        const SizedBox(height:13),
+        InkWell(onTap:widget.smartLink,
+          borderRadius:BorderRadius.circular(22),
+          child:Container(
+            padding:const EdgeInsets.all(16),
+            decoration:BoxDecoration(
+              gradient:const LinearGradient(
+                begin:Alignment.topRight,end:Alignment.bottomLeft,
+                colors:[Color(0xffff782e),Color(0xffbb390f)]),
+              borderRadius:BorderRadius.circular(22)),
+            child:Row(children:[
+              Container(width:55,height:55,
+                decoration:BoxDecoration(
+                  color:Colors.white.withValues(alpha:.18),
+                  borderRadius:BorderRadius.circular(15)),
+                child:const Icon(Icons.content_paste_search_rounded,
+                  color:Colors.white,size:31)),
+              const SizedBox(width:12),
+              const Expanded(child:Column(
+                crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text('انسخ الرابط وحلّله',
+                    style:TextStyle(color:Colors.white,
+                      fontWeight:FontWeight.w900,fontSize:18)),
+                  SizedBox(height:3),
+                  Text('الصق رابط • اعرف النوع • شغّل أو نزّل',
+                    style:TextStyle(color:Colors.white,fontSize:11)),
+                ])),
+              const Icon(Icons.arrow_back_ios_new_rounded,
+                color:Colors.white,size:18),
+            ]),
+          ),
+        ),
         const SizedBox(height:23),
         _section('مواقعك المفضلة'),
         const SizedBox(height:10),
@@ -275,6 +336,27 @@ class _HomeFeedState extends State<_HomeFeed> {
         ]),
         const SizedBox(height:25),
         _section('ماذا تريد تعمل دلوقتي؟'),
+        const SizedBox(height:12),
+        AnimatedBuilder(animation:widget.phone,builder:(ctx,_)=>Card(
+          child:ListTile(
+            contentPadding:const EdgeInsets.all(12),
+            leading:Container(width:49,height:49,
+              decoration:BoxDecoration(
+                color:MediaPalette.orange.withValues(alpha:.13),
+                borderRadius:BorderRadius.circular(14)),
+              child:const Icon(Icons.library_music,
+                color:MediaPalette.orange,size:27)),
+            title:const Text('ملفات الموبايل تلقائيًا',
+              style:TextStyle(fontWeight:FontWeight.w900)),
+            subtitle:Text(
+              '${widget.phone.audio.length} صوت • '
+              '${widget.phone.videos.length} فيديو  '
+              '${widget.phone.audioGranted||widget.phone.videoGranted?"":"• يحتاج صلاحية"}'),
+            trailing:const Icon(Icons.chevron_left),
+            onTap:widget.openLibrary,
+          ),
+        )),
+
         const SizedBox(height:12),
         Row(children:[
           Expanded(child:_actionCard(
