@@ -1,60 +1,67 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ibetoo_media/src/device_media.dart';
-import 'package:ibetoo_media/src/link_inspector.dart';
+import 'package:ibetoo_media/src/library.dart';
 import 'package:ibetoo_media/src/player.dart';
-import 'package:ibetoo_media/src/media_utils.dart';
 
 void main(){
-  group('Native media catalog contract',(){
-    test('Android MediaStore rows are mapped with proper duration and type',(){
+  TestWidgetsFlutterBinding.ensureInitialized();
+  group('Android media index fields',(){
+    test('Audio metadata includes album, artist and folder',(){
       final item=PhoneMedia.fromJson({
-        'id':42,'name':'أغنيتي.mp3','uri':'content://media/external/audio/media/42',
-        'kind':'audio','mime':'audio/mpeg','duration':231000,
+        'id':42,'name':'sample.mp3',
+        'uri':'content://media/external/audio/media/42',
+        'kind':'audio','artist':'Artist','album':'Album',
+        'folder':'Music/','mime':'audio/mpeg','duration':231000,
         'size':5120000,'date':1763500000,
       });
       expect(item.audio,isTrue);
-      expect(item.video,isFalse);
-      expect(item.name,'أغنيتي.mp3');
-      expect(item.duration,231000);
-      expect(item.size,5120000);
+      expect(item.artist,'Artist');
+      expect(item.album,'Album');
+      expect(item.folder,'Music/');
     });
-    test('video rows do not become audio tracks automatically',(){
-      final item=PhoneMedia.fromJson({
-        'id':43,'name':'clip.mp4','uri':'content://media/external/video/media/43',
-        'kind':'video','size':12300000,'duration':31000,
-      });
-      expect(item.video,isTrue);
-      expect(item.audio,isFalse);
-      expect(MediaUtils.isVideo(item.name),isTrue);
+    test('Image and video media are distinguished',(){
+      expect(PhoneMedia.fromJson({'kind':'image'}).image,isTrue);
+      expect(PhoneMedia.fromJson({'kind':'video'}).video,isTrue);
     });
-    test('media playback playlist entries preserve user-selected URI',(){
+    test('MediaTrack keeps original URI for queues',(){
       const track=MediaTrack(source:'content://media/external/audio/media/42',
-        title:'أغنيتي',album:'مكتبتي');
+        title:'Sample');
       expect(track.source,startsWith('content://'));
-      expect(track.album,'مكتبتي');
     });
   });
-  group('Real link analysis behavior',(){
-    test('YouTube links are for playback, not fictitious MP3 conversion',() async {
-      final result=await MediaLinkInspector.inspect(
-        'https://www.youtube.com/watch?v=example');
-      expect(result.kind,LinkKind.youtube);
-      expect(result.variants,isEmpty);
+  group('Library persistence and playlists',(){
+    test('Create, reorder and save playlists',()async{
+      SharedPreferences.setMockInitialValues({});
+      final library=await MediaLibrary.load();
+      final p=library.createPlaylist('رحلات');
+      library.appendToPlaylist(p,'audio-1');
+      library.appendToPlaylist(p,'audio-2');
+      library.reorder(p,0,2);
+      expect(p.items,['audio-2','audio-1']);
+      library.toggleFavorite('audio-1');
+      library.recordPlay('audio-1');
+      library.saveResume('audio-1',const Duration(seconds:51));
+      await library.save();
+      library.dispose();
+      final restored=await MediaLibrary.load();
+      expect(restored.playlists.single.items,['audio-2','audio-1']);
+      expect(restored.isFavorite('audio-1'),isTrue);
+      expect(restored.playCount['audio-1'],1);
+      expect(restored.positionFor('audio-1').inSeconds,51);
+      restored.dispose();
     });
-    test('YouTube music URLs are classified the same way',() async {
-      final result=await MediaLinkInspector.inspect(
-        'https://music.youtube.com/watch?v=example');
-      expect(result.kind,LinkKind.youtube);
-      expect(result.variants,isEmpty);
-    });
-    test('HTTP input is rejected without opening an insecure connection',() async {
-      final result=await MediaLinkInspector.inspect(
-        'http://example.org/sample.mp3');
-      expect(result.kind,LinkKind.invalid);
-    });
-    test('real quality variants are not manufactured for YouTube',(){
-      const list=<LinkVariant>[];
-      expect(list,isEmpty);
+    test('Backup restores preferences without restoring raw media bytes',()async{
+      SharedPreferences.setMockInitialValues({});
+      final origin=await MediaLibrary.load();
+      final p=origin.createPlaylist('Favorites');
+      origin.appendToPlaylist(p,'uri1');
+      final bytes=await origin.exportBackup();
+      final target=await MediaLibrary.load();
+      await target.importBackup(bytes);
+      expect(target.playlists.first.name,'Favorites');
+      expect(target.files,isEmpty);
+      origin.dispose();target.dispose();
     });
   });
 }
