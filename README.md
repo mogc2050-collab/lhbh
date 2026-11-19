@@ -11,6 +11,5 @@ Android Flutter browser + direct authorized download manager + local audio/video
 - No in-app ad SDKs, but **third-party sites including YouTube may display ads**.
 - Does not extract copyrighted/DRM-protected video or block YouTube ads.
 - GitHub Actions manual build only, direct APK artifact, emulator smoke test.
-- Earlier Kingdom game preserved in archive/kingdom-v3.1-before-media.
 
 See README_AR.md for full instructions and limitations.
