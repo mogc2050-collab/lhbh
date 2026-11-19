@@ -52,12 +52,13 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
             when(call.method){
                 "permissions" -> result.success(permissionState())
                 "requestPermissions" -> requestPermissions(result)
-                "scan","thumbnail","audioCache","duplicates" -> {
+                "scan","thumbnail","imagePreview","audioCache","duplicates" -> {
                     executor.execute {
                         try{
                             val value: Any = when(call.method){
                                 "scan" -> scan(call.argument<String>("kind") ?: "audio")
                                 "thumbnail" -> thumbnail(call.argument<String>("uri") ?: "")
+                                "imagePreview" -> imagePreview(call.argument<String>("uri") ?: "")
                                 "audioCache" -> cacheMedia(call.argument<String>("uri") ?: "")
                                 else -> duplicates()
                             }
@@ -204,6 +205,28 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
         bitmap?.compress(Bitmap.CompressFormat.JPEG,78,out)
         return out.toByteArray()
     }
+    private fun imagePreview(raw:String):ByteArray {
+        val uri=checkedUri(raw)
+        val bounds=BitmapFactory.Options()
+        bounds.inJustDecodeBounds=true
+        activity.contentResolver.openInputStream(uri)?.use{
+            BitmapFactory.decodeStream(it,null,bounds)
+        }
+        var sample=1
+        while(bounds.outWidth/sample>2048||bounds.outHeight/sample>2048){
+            sample*=2
+        }
+        val opts=BitmapFactory.Options()
+        opts.inSampleSize=sample
+        val bitmap=activity.contentResolver.openInputStream(uri)?.use{
+            BitmapFactory.decodeStream(it,null,opts)
+        } ?: throw IllegalArgumentException("Cannot decode image")
+        val bytes=ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG,90,bytes)
+        bitmap.recycle()
+        return bytes.toByteArray()
+    }
+
     private fun cacheMedia(raw:String):String {
         val uri=checkedUri(raw)
         val mime=activity.contentResolver.getType(uri)?:""
