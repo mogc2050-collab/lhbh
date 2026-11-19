@@ -232,12 +232,12 @@ class _KingdomGameState extends State<KingdomGame>
                 fontWeight:FontWeight.w900,fontSize:19)),
           Row(mainAxisAlignment:MainAxisAlignment.center,children:[
             IconButton(onPressed:()=>update(()=>quantity=
-               (quantity-1).clamp(1,999)),icon:const Icon(
+               (quantity-1).clamp(1,999).toInt()),icon:const Icon(
                 Icons.remove_circle,color:KColor.gold,size:29)),
             Text(quantity.toString(),style:const TextStyle(color:KColor.light,
               fontSize:24,fontWeight:FontWeight.bold)),
             IconButton(onPressed:()=>update(()=>quantity=
-               (quantity+1).clamp(1,999)),icon:const Icon(
+               (quantity+1).clamp(1,999).toInt()),icon:const Icon(
                 Icons.add_circle,color:KColor.gold,size:29)),
           ]),
           Text('الإجمالي: '+(g.marketPrice(chosenGood,buying:buying)*quantity)
