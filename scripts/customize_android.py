@@ -20,6 +20,7 @@ perms = [
  "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
  "android.permission.READ_MEDIA_AUDIO",
  "android.permission.READ_MEDIA_VIDEO",
+ "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
  "android.permission.POST_NOTIFICATIONS",
 ]
 inject = "\n".join(
