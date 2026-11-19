@@ -1,16 +1,17 @@
-# iBetoo Media 2.0
+# iBetoo Media 3.0
 
-Native Android + Flutter browser, smart link analysis, media library and background player.
+Arabic Android offline media library and Quetta-inspired browser. **No in-app file downloader.**
 
-**What changed:**
-- Android MediaStore native bridge lists indexed phone music and videos (after granular runtime user consent), with search, filters and sorting.
-- Audio queues: next/previous, shuffle, repeat, lock-screen controls and system media notifications.
-- Device video playback through content URIs, a next-video playlist, PiP and an explicit handoff to background audio for supported local media.
-- Smart paste analyzer recognizes direct HTTPS media using HEAD metadata, downloads original files using DownloadManager, and presents genuine HLS quality variants for playback.
-- Improved coherent editorial UI, dark/light themes and in-app browsing including public YouTube pages.
-- Android permissions requested for audio, video and notifications; no all-files unrestricted permission.
-- New native permissions/MediaStore bridge is checked by manual GitHub Actions before building an APK.
+Core media: MediaStore index for audio/video/images, live Android ContentObserver updates, folders, albums, artists, thumbnails, playlists, smart favorites/history/resume, queue, background audio/lock-screen MediaSession, video PiP/gestures/next, SRT/VTT, Android equalizer, speed/sleep timer, SHA-256 duplicate detection (read-only), user-consented media imports, backup of library metadata and optional biometric/device-lock access.
 
-**Boundaries:** YouTube/DRM downloading, video-to-MP3 conversion, invented quality labels and ad blocking on external sites are not implemented. Google sign-in inside WebView can be restricted. HLS source variants are for playback, not MP4 download. Some formats/codecs may be unsupported; background audio handoff from phone content currently needs a temporary file and has a 180 MB per-track limit. Not validated on a device yet.
+Browser: simple bottom address bar, favorites, history, tabs, quick access sites, search engine choice, reader mode, experimental page darkening and local-history-free private tabs. Android WebView is not a full standalone Chromium browser. Chrome extensions and complete request-level ad blocking are not implemented. Private tabs share WebView cookie storage and are not fully isolated.
 
-**Build:** GitHub Actions > Build iBetoo Media APK - Manual Only > Run workflow on main. The workflow runs Dart analysis/tests, Kotlin/Gradle release build, APK checks and emulator startup before publishing a direct APK. No local tool installation required.
+Original phone files are never silently renamed, moved or removed. Imported app-owned copies can be renamed and organized within the app. Backups restore metadata, not raw media files. Codec and DRM restrictions apply.
+
+**All web-file download screens, smart link downloader and native DownloadManager code are removed.** APK artifact creation in GitHub Actions remains.
+
+Manual APK: Actions > Build iBetoo Media APK - Manual Only > Run workflow on main. Full compile, Android checks, signature verification and emulator smoke test are required before treating the build as validated.
+
+Google sign-in for this app still needs official OAuth SHA-1 setup; signing demo key in repository is not appropriate for production.
+
+This release has not yet been validated on a physical Android device.
