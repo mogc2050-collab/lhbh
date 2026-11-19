@@ -224,10 +224,14 @@ class WorldPainter extends CustomPainter {
   }
   void site(Canvas c,Site s) {
     final p=MapSpace.at(s.x,s.y);
-    switch(s.kind){
-      case Facility.farm: farm(c,p);
+    switch (s.kind) {
+      case Facility.farm:
+        farm(c,p);
+        break;
       case Facility.quarry:
-      case Facility.mine: rock(c,p,scale:1.4);
+      case Facility.mine:
+        rock(c,p,scale:1.4);
+        break;
       case Facility.well:
         square(c,Rect.fromCenter(center:p,width:38,height:21),
             const Color(0xff797979),edge:const Color(0xffccd3d0),radius:7);
@@ -239,18 +243,25 @@ class WorldPainter extends CustomPainter {
         poly(c,[p.translate(-22,-33),p.translate(0,-48),
           p.translate(23,-33),p.translate(13,-29),
           p.translate(-13,-29)],const Color(0xff914934));
-      case Facility.market: market(c,p);
-      case Facility.castle: castle(c,p);
+        break;
+      case Facility.market:
+        market(c,p);
+        break;
+      case Facility.castle:
+        castle(c,p);
+        break;
       case Facility.ranch:
         farm(c,p);
         circ(c,p.translate(-10,-5),8,const Color(0xffe3d6b4));
         circ(c,p.translate(14,-3),7,const Color(0xffe9ba96));
+        break;
       default:
         house(c,p,s.kind,level:s.level);
         if(s.kind==Facility.woodcutter||s.kind==Facility.sawmill){
           for(var i=0;i<3;i++) line(c,p.translate(12,5+i*5.0),
             p.translate(35,5+i*5.0),const Color(0xffa26e3d),4);
         }
+        break;
     }
   }
   @override
