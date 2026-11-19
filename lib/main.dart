@@ -1,51 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'kingdom/engine.dart';
-import 'visual/game_screen.dart';
+import 'package:just_audio_background/just_audio_background.dart';
+import 'src/library.dart';
+import 'src/player.dart';
+import 'src/shell.dart';
+import 'src/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
-  runApp(const RebuiltKingdomApp());
+  await JustAudioBackground.init(
+    androidNotificationChannelId:'com.ibetoo.media.audio',
+    androidNotificationChannelName:'iBetoo Media - مشغّل الصوت',
+    androidNotificationOngoing:true,
+  );
+  final library=await MediaLibrary.load();
+  runApp(IbetooMediaApp(library:library));
 }
 
-class RebuiltKingdomApp extends StatelessWidget {
-  const RebuiltKingdomApp({super.key});
+class IbetooMediaApp extends StatefulWidget {
+  const IbetooMediaApp({super.key,required this.library});
+  final MediaLibrary library;
+  @override
+  State<IbetooMediaApp> createState()=>_IbetooMediaAppState();
+}
+
+class _IbetooMediaAppState extends State<IbetooMediaApp> {
+  late final BackgroundMusic music=BackgroundMusic();
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'ممالك الحياة',
-    debugShowCheckedModeBanner: false,
-    locale: const Locale('ar'),
-    theme: ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      scaffoldBackgroundColor: const Color(0xff182d25),
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xffd0a150),
-        brightness: Brightness.dark,
-      ),
-    ),
-    builder: (context, child) => Directionality(
-      textDirection: TextDirection.rtl, child: child!),
-    home: FutureBuilder<KingdomEngine>(
-      future: KingdomEngine.load(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const Scaffold(body: Center(child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 18),
-              Text('جارٍ إنشاء عالمك الجديد...'),
-            ],
-          )));
-        }
-        return KingdomGame(key: const ValueKey('rebuild-v3'),
-          engine: snapshot.data!);
-      },
+  void dispose() {
+    music.dispose();
+    widget.library.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context)=>AnimatedBuilder(
+    animation:widget.library,
+    builder:(context,_)=>MaterialApp(
+      title:'iBetoo Media',
+      debugShowCheckedModeBanner:false,
+      theme:mediaTheme(Brightness.light),
+      darkTheme:mediaTheme(Brightness.dark),
+      themeMode:widget.library.darkMode?ThemeMode.dark:ThemeMode.light,
+      locale:const Locale('ar','EG'),
+      builder:(context,child)=>Directionality(
+        textDirection:TextDirection.rtl,child:child!),
+      home:MediaShell(library:widget.library,music:music),
     ),
   );
 }

@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:medieval_life/kingdom/engine.dart';
-import 'package:medieval_life/visual/game_screen.dart';
+import 'package:ibetoo_media/src/theme.dart';
 
 void main() {
-  testWidgets('rebuilt game shows actual interactive navigation', (tester) async {
-    final engine = KingdomEngine();
+  testWidgets('Arabic identity stays legible in daylight theme', (tester) async {
     await tester.pumpWidget(MaterialApp(
-      home: KingdomGame(engine: engine),
+      theme:mediaTheme(Brightness.light),
+      home:const Directionality(
+        textDirection:TextDirection.rtl,
+        child:Scaffold(body:Center(
+          child:Text('iBetoo Media - التنزيلات والمكتبة'),
+        )),
+      ),
     ));
-    expect(find.byType(KingdomGame), findsOneWidget);
-    expect(find.text('ممالك الحياة'), findsOneWidget);
-    expect(find.text('السوق'), findsWidgets);
-    await tester.pumpWidget(const SizedBox.shrink());
-    engine.dispose();
+    expect(find.text('iBetoo Media - التنزيلات والمكتبة'),findsOneWidget);
+  });
+  test('light and dark themes have different brightness', () {
+    expect(mediaTheme(Brightness.light).brightness,Brightness.light);
+    expect(mediaTheme(Brightness.dark).brightness,Brightness.dark);
   });
 }

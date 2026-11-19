@@ -1,120 +1,122 @@
-name: Build APK Direct (Manual Only)
+name: Build iBetoo Media APK - Manual Only
 
-# Run only from GitHub > Actions > Run workflow. NEVER build on push.
+# Manually requested from GitHub Actions. No push / pull_request triggers.
 on:
   workflow_dispatch:
     inputs:
-      test_installation_on_emulator:
-        description: 'Install and launch APK on Android emulator (recommended)'
-        required: true
+      test_on_android:
+        description: Install and launch on Android emulator after building
         type: boolean
+        required: true
         default: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: medieval-life-manual-${{ github.ref }}
+  group: ibetoo-media-manual-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-android:
-    name: Build, sign, verify and publish direct APK
+  android:
+    name: Check, sign, package and verify Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 70
-
+    timeout-minutes: 75
     steps:
-      - name: Checkout project
+      - name: Checkout new media app
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Flutter
+      - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Show installed tool versions
+      - name: Print environment
         run: |
           flutter --version
           java -version
 
-      - name: Generate Android project on GitHub runner
-        run: flutter create --platforms=android --project-name=medieval_life --org=com.mamlakatlife .
+      - name: Create independent Android application
+        run: flutter create --platforms=android --project-name=ibetoo_media --org=com.ibetoo .
 
-      - name: Apply identity, icons and stable signing for test installations
+      - name: Configure background downloads, audio, PiP, app icon and signing
         run: python3 scripts/customize_android.py
 
-      # Optional PRIVATE signing for later production. If unset, an openly shared
-      # demo-only key is used so test builds have a stable signing certificate.
-      - name: Load private signing key when secrets are configured
-        env:
-          PRIVATE_KEYSTORE_BASE64: ${{ secrets.KINGDOM_KEYSTORE_BASE64 }}
-          PRIVATE_STORE_PASSWORD: ${{ secrets.KINGDOM_STORE_PASSWORD }}
-          PRIVATE_KEY_ALIAS: ${{ secrets.KINGDOM_KEY_ALIAS }}
-          PRIVATE_KEY_PASSWORD: ${{ secrets.KINGDOM_KEY_PASSWORD }}
+      - name: Load optional PRIVATE signing
         shell: bash
+        env:
+          PRIVATE_KEYSTORE_BASE64: ${{ secrets.MEDIA_KEYSTORE_BASE64 }}
+          PRIVATE_STORE_PASSWORD: ${{ secrets.MEDIA_STORE_PASSWORD }}
+          PRIVATE_KEY_ALIAS: ${{ secrets.MEDIA_KEY_ALIAS }}
+          PRIVATE_KEY_PASSWORD: ${{ secrets.MEDIA_KEY_PASSWORD }}
         run: |
           if [[ -n "$PRIVATE_KEYSTORE_BASE64" ]]; then
             if [[ -z "$PRIVATE_STORE_PASSWORD" || -z "$PRIVATE_KEY_ALIAS" || -z "$PRIVATE_KEY_PASSWORD" ]]; then
-              echo 'ERROR: Private keystore provided but a password or alias secret is missing.' >&2
+              echo "Incomplete media signing secrets" >&2
               exit 1
             fi
-            printf '%s' "$PRIVATE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/kingdom-private.jks"
-            echo "KINGDOM_KEYSTORE_PATH=$RUNNER_TEMP/kingdom-private.jks" >> "$GITHUB_ENV"
-            echo "KINGDOM_STORE_PASSWORD=$PRIVATE_STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "KINGDOM_KEY_ALIAS=$PRIVATE_KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "KINGDOM_KEY_PASSWORD=$PRIVATE_KEY_PASSWORD" >> "$GITHUB_ENV"
-            echo 'Using private signing keystore from Actions secrets.'
+            printf '%s' "$PRIVATE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ibetoo-private.jks"
+            {
+              echo "MEDIA_KEYSTORE_PATH=$RUNNER_TEMP/ibetoo-private.jks"
+              echo "MEDIA_STORE_PASSWORD=$PRIVATE_STORE_PASSWORD"
+              echo "MEDIA_KEY_ALIAS=$PRIVATE_KEY_ALIAS"
+              echo "MEDIA_KEY_PASSWORD=$PRIVATE_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+            echo "Using configured private media signing key"
           else
-            echo 'Using bundled TEST-ONLY keystore. Not safe for app-store/public production.'
+            echo "Using PUBLIC TEST KEY ONLY. Configure MEDIA_ secrets before production distribution."
           fi
 
-      - name: Install Flutter dependencies
+      - name: Resolve Flutter packages
         run: flutter pub get
 
-      - name: Analyze Dart for compile errors
+      - name: Analyze source for Dart compile issues
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      - name: Run project tests
+      - name: Run media app unit tests
         run: flutter test
 
-      - name: Build signed universal APK for all Flutter Android architectures
+      - name: Build universal signed APK
         shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
-          flutter build apk --release --build-number "$((100000 + GITHUB_RUN_NUMBER))"
+          flutter build apk --release \
+            --build-number "$((10000 + GITHUB_RUN_NUMBER))" \
+            --dart-define="GOOGLE_WEB_CLIENT_ID=$GOOGLE_WEB_CLIENT_ID"
           test -s build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Verify actual APK signature, manifest and file integrity
+      - name: Verify signature, package, native runtime and integrity
         run: bash scripts/verify_apk.sh build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Prepare direct APK download
+      - name: Prepare single direct APK download
         run: |
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk dist/Mamlakat-Al-Hayat.apk
-          sha256sum dist/Mamlakat-Al-Hayat.apk > dist/SHA256.txt
+          cp build/app/outputs/flutter-apk/app-release.apk dist/iBetoo-Media.apk
+          sha256sum dist/iBetoo-Media.apk > dist/iBetoo-Media.sha256
 
-      # Since Feb 2026, archive:false enables single-file downloads from the UI.
-      - name: Upload APK DIRECTLY without ZIP
+      - name: Publish direct APK without ZIP
         uses: actions/upload-artifact@v7
         with:
-          path: dist/Mamlakat-Al-Hayat.apk
+          path: dist/iBetoo-Media.apk
           archive: false
           if-no-files-found: error
           retention-days: 30
 
-      - name: Permit hardware-accelerated emulator access
-        if: ${{ inputs.test_installation_on_emulator }}
+      - name: Allow KVM
+        if: ${{ inputs.test_on_android }}
         run: |
           if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
 
-      - name: Install APK and open the game on an Android emulator
-        if: ${{ inputs.test_installation_on_emulator }}
+      - name: Test actual installation and app launch
+        if: ${{ inputs.test_on_android }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -122,17 +124,17 @@ jobs:
           target: google_apis
           profile: pixel_3a
           disable-animations: true
-          script: bash scripts/emulator_smoke.sh dist/Mamlakat-Al-Hayat.apk
+          script: bash scripts/emulator_smoke.sh dist/iBetoo-Media.apk
 
-      - name: Show download instructions
+      - name: Build instructions
         if: ${{ always() }}
         shell: bash
         run: |
           {
-            echo '## تنزيل اللعبة APK مباشرة'
+            echo '## iBetoo Media - تنزيل مباشر'
             echo ''
-            echo 'افتح تشغيل الـ Action الحالي، ثم من قسم **Artifacts** اضغط **Mamlakat-Al-Hayat.apk**.'
-            echo 'هذا ملف APK مباشر، وليس ZIP، بفضل `upload-artifact@v7` و `archive:false`.'
-            echo ''
-            echo 'لو فشل اختبار المحاكي بعد رفع الملف، راجع خطوة **Install APK and open the game** لمعرفة السبب.'
+            echo 'من تشغيل الـActions الحالي، افتح Artifacts وحمّل **iBetoo-Media.apk** بدون ZIP.'
+            echo 'إذا فشل التحليل أو الاختبار، لا تُعتبر النسخة جاهزة للتثبيت.'
+            echo 'التطبيق لا يستخدم أي شبكة إعلانات داخلية؛ صفحات الويب الخارجية قد تحتوي على إعلانات.'
+            echo 'Google login needs a valid Google OAuth app, registered Android SHA-1, and GOOGLE_WEB_CLIENT_ID secret.'
           } >> "$GITHUB_STEP_SUMMARY"

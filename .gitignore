@@ -1,3 +1,4 @@
+# Generated Flutter / Android files (CI creates Android from scratch)
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -7,6 +8,17 @@
 build/
 coverage/
 android/
-.idea/
-*.iml
+ios/
+*.log
+*.apk
+*.aab
+
+# Credentials must never be committed
+*.keystore
+*.jks
+!signing/dev_only_media.jks
+*.properties
+!analysis_options.yaml
 .DS_Store
+.idea/
+.vscode/
