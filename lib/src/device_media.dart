@@ -109,6 +109,9 @@ class PhoneLibrary extends ChangeNotifier {
     }catch(_){}
     return null;
   }
+  Future<Uint8List?> imagePreview(String uri) async{
+    return channel.invokeMethod<Uint8List>('imagePreview',{'uri':uri});
+  }
   Future<List<List<String>>> findDuplicates() async{
     final data=await channel.invokeMethod<List<dynamic>>('duplicates');
     return (data??[]).whereType<Map>().map((e)=>
