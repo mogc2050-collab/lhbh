@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 
 /// iBetoo Media design tokens. One editorial system shared across all views.
 class MediaPalette {
