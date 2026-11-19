@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'library.dart';
+import 'link_inspector.dart';
 import 'media_utils.dart';
 import 'player.dart';
 import 'theme.dart';
 
 class DownloadScreen extends StatefulWidget {
-  const DownloadScreen({super.key,required this.library,required this.music});
+  const DownloadScreen({super.key,required this.library,
+    required this.music,required this.browse});
   final MediaLibrary library;
   final BackgroundMusic music;
+  final ValueChanged<String> browse;
   @override
   State<DownloadScreen> createState()=>_DownloadScreenState();
 }
@@ -66,6 +69,12 @@ class _DownloadScreenState extends State<DownloadScreen> {
         SnackBar(content:Text('تعذر تنفيذ الإجراء: $e')));
     }
   }
+  void _smart() {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder:(_)=>SmartLinkScreen(library:widget.library,
+        music:widget.music,browse:widget.browse)));
+  }
+
   Future<void> _addLink() async {
     final url=TextEditingController();
     final name=TextEditingController();
@@ -114,6 +123,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
   Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:const Text('التنزيلات'),
       actions:[
+        IconButton(tooltip:'رابط مباشر',icon:const Icon(Icons.add_link),
+          onPressed:_addLink),
         IconButton(tooltip:'تحديث',icon:const Icon(Icons.refresh),
           onPressed:widget.library.refreshDownloads),
         IconButton(tooltip:'تنزيلات أندرويد',
@@ -125,8 +136,8 @@ class _DownloadScreenState extends State<DownloadScreen> {
           }),
       ]),
     floatingActionButton:FloatingActionButton.extended(
-      onPressed:_addLink,label:const Text('رابط جديد'),
-      icon:const Icon(Icons.add_link),
+      onPressed:_smart,label:const Text('لصق وتحليل رابط'),
+      icon:const Icon(Icons.content_paste_search),
       backgroundColor:MediaPalette.orange,foregroundColor:Colors.white),
     body:AnimatedBuilder(animation:widget.library,builder:(ctx,child)=>
       widget.library.downloads.isEmpty ?
