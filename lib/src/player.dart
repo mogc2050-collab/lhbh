@@ -53,12 +53,24 @@ class BackgroundMusic extends ChangeNotifier {
     try{
       final track=queue[index];
       await player.stop();
-      final src=await PhoneLibrary.playableAudio(track.source);
-      await player.setAudioSource(AudioSource.uri(
-        src.startsWith('content://')||src.startsWith('https://')?
-          Uri.parse(src):Uri.file(src),
-        tag:MediaItem(id:track.source,title:track.title,album:track.album),
-      ));
+      final original=track.source;
+      Uri sourceUri(String source)=>
+        source.startsWith('content://')||source.startsWith('https://')?
+          Uri.parse(source):Uri.file(source);
+      AudioSource sourceFor(String source)=>AudioSource.uri(
+        sourceUri(source),
+        tag:MediaItem(id:original,title:track.title,album:track.album));
+      try {
+        // MediaStore content URI playback may work directly with ExoPlayer.
+        // Avoid duplicating large files if it does.
+        await player.setAudioSource(sourceFor(original));
+      }catch(e) {
+        if(!original.startsWith('content://'))rethrow;
+        // SAF/content URI support differs between player implementations.
+        // Only then create an app-owned temporary copy of this track.
+        final copied=await PhoneLibrary.playableAudio(original);
+        await player.setAudioSource(sourceFor(copied));
+      }
       queueIndex=index;
       currentTitle=track.title;
       currentPath=track.source;
