@@ -305,10 +305,10 @@ if kts.is_file():
         raise SystemExit("Unsupported Kotlin Android Gradle template")
     config=r'''    signingConfigs {
         create("ibetooDemo") {
-            storeFile = file(System.getenv("MEDIA_KEYSTORE_PATH") ?: "../../signing/dev_only_media.jks")
-            storePassword = System.getenv("MEDIA_STORE_PASSWORD") ?: "mamlakat-install-test-2026"
-            keyAlias = System.getenv("MEDIA_KEY_ALIAS") ?: "mamlakat-dev"
-            keyPassword = System.getenv("MEDIA_KEY_PASSWORD") ?: "mamlakat-install-test-2026"
+            storeFile = file(System.getenv("MEDIA_KEYSTORE_PATH") ?: "../../signing/dev_only_ibetoo_media.jks")
+            storePassword = System.getenv("MEDIA_STORE_PASSWORD") ?: "ibetoo-media-test-2026"
+            keyAlias = System.getenv("MEDIA_KEY_ALIAS") ?: "ibetoo-media-dev"
+            keyPassword = System.getenv("MEDIA_KEY_PASSWORD") ?: "ibetoo-media-test-2026"
         }
     }
 '''
@@ -324,10 +324,10 @@ elif groovy.is_file():
     if data.count(anchor)!=1:raise SystemExit("Unknown Groovy Android template")
     config=r"""    signingConfigs {
         ibetooDemo {
-            storeFile file(System.getenv('MEDIA_KEYSTORE_PATH') ?: '../../signing/dev_only_media.jks')
-            storePassword System.getenv('MEDIA_STORE_PASSWORD') ?: 'mamlakat-install-test-2026'
-            keyAlias System.getenv('MEDIA_KEY_ALIAS') ?: 'mamlakat-dev'
-            keyPassword System.getenv('MEDIA_KEY_PASSWORD') ?: 'mamlakat-install-test-2026'
+            storeFile file(System.getenv('MEDIA_KEYSTORE_PATH') ?: '../../signing/dev_only_ibetoo_media.jks')
+            storePassword System.getenv('MEDIA_STORE_PASSWORD') ?: 'ibetoo-media-test-2026'
+            keyAlias System.getenv('MEDIA_KEY_ALIAS') ?: 'ibetoo-media-dev'
+            keyPassword System.getenv('MEDIA_KEY_PASSWORD') ?: 'ibetoo-media-test-2026'
         }
     }
 """
