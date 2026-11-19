@@ -30,8 +30,7 @@ class MediaUtils {
         host == 'youtube-nocookie.com' || host.endsWith('.youtube-nocookie.com');
   }
   static bool canDownload(Uri uri) =>
-      (uri.scheme == 'https' || uri.scheme == 'http') &&
-      uri.host.isNotEmpty && !isYouTube(uri);
+      uri.scheme == 'https' && uri.host.isNotEmpty && !isYouTube(uri);
 
   static Uri interpretAddress(String query) {
     final value = query.trim();
@@ -39,8 +38,43 @@ class MediaUtils {
     final parsed = Uri.tryParse(value);
     if (parsed != null && (parsed.scheme == 'http' ||
         parsed.scheme == 'https') && parsed.host.isNotEmpty) return parsed;
-    if (!value.contains(' ') && value.contains('.') &&
-        !value.startsWith('.')) {
+    final domain = RegExp(
+      r'^[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+(?:/[^\\s]*)?
+    return Uri.https('www.google.com','/search',{'q':value});
+  }
+
+  static String fileTitle(Uri uri) {
+    final component = Uri.decodeComponent(uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.last : '');
+    if (component.isNotEmpty && !component.contains('/')) return component;
+    return 'media-file';
+  }
+
+  static String displaySize(int bytes) {
+    if (bytes < 0) return 'غير معروف';
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return (bytes / 1024).toStringAsFixed(1) + ' KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toStringAsFixed(1) + ' MB';
+    }
+    return (bytes / (1024 * 1024 * 1024)).toStringAsFixed(1) + ' GB';
+  }
+
+  static String? validateDownload(String text) {
+    final uri = Uri.tryParse(text.trim());
+    if (uri == null || !canDownload(uri)) {
+      return 'الرابط لازم يكون مباشرًا بصيغة HTTP أو HTTPS ومن مصدر يسمح بالتنزيل.';
+    }
+    if (uri.scheme != 'https') {
+      return 'الرابط غير مشفّر؛ التطبيق يقبل HTTPS فقط.';
+    }
+    return null;
+  }
+}
+);
+    if (domain.hasMatch(value)) {
       return Uri.parse('https://$value');
     }
     return Uri.https('www.google.com','/search',{'q':value});
