@@ -101,8 +101,40 @@ class _MediaShellState extends State<MediaShell>
     phone.dispose();
     super.dispose();
   }
+  void _openNowPlaying(){
+    showModalBottomSheet<void>(
+      context:context,
+      isScrollControlled:true,
+      useSafeArea:true,
+      backgroundColor:Theme.of(context).colorScheme.surface,
+      builder:(sheetContext)=>FractionallySizedBox(
+        heightFactor:.88,
+        child:Column(children:[
+          Padding(padding:const EdgeInsets.fromLTRB(16,8,12,0),
+            child:Row(children:[
+              const Expanded(child:Text('قيد التشغيل',
+                style:TextStyle(fontSize:18,fontWeight:FontWeight.bold))),
+              TextButton.icon(
+                onPressed:()async{
+                  await widget.music.dismissPlayback();
+                  if(sheetContext.mounted)Navigator.pop(sheetContext);
+                },
+                icon:const Icon(Icons.close_rounded),
+                label:const Text('إغلاق التشغيل')),
+              IconButton(
+                tooltip:'تصغير المشغل',
+                onPressed:()=>Navigator.pop(sheetContext),
+                icon:const Icon(Icons.keyboard_arrow_down_rounded)),
+            ])),
+          Expanded(child:AudioDetail(music:widget.music)),
+        ])),
+    );
+  }
+
   @override Widget build(BuildContext context){
-    return Scaffold(body:Stack(children:[
+    return PopScope(
+      canPop:!locked && !widget.library.appLock,
+      child:Scaffold(body:Stack(children:[
       IndexedStack(index:selected,children:[
         BrowserScreen(library:widget.library),
         MediaCollectionScreen(
@@ -130,9 +162,7 @@ class _MediaShellState extends State<MediaShell>
     ]),
       bottomNavigationBar:locked?null:Column(
         mainAxisSize:MainAxisSize.min,children:[
-          MiniMusic(music:widget.music,open:()=>Navigator.push(
-            context,MaterialPageRoute<void>(
-              builder:(_)=>AudioDetail(music:widget.music)))),
+          MiniMusic(music:widget.music,open:_openNowPlaying),
           NavigationBar(selectedIndex:selected,
             onDestinationSelected:(v)=>setState(()=>selected=v),
             destinations:const [
@@ -147,6 +177,7 @@ class _MediaShellState extends State<MediaShell>
                 selectedIcon:Icon(Icons.tune),label:'الإعدادات'),
             ]),
         ]),
+      ),
     );
   }
 }
