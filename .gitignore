@@ -16,7 +16,7 @@ ios/
 # Credentials must never be committed
 *.keystore
 *.jks
-!signing/dev_only_media.jks
+!signing/dev_only_ibetoo_media.jks
 *.properties
 !analysis_options.yaml
 .DS_Store
