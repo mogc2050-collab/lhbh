@@ -40,7 +40,7 @@ ThemeData mediaTheme(Brightness brightness) {
 
   return ThemeData(
     useMaterial3:true,
-    pageTransitionsTheme:const PageTransitionsTheme(builders:{
+    pageTransitionsTheme:PageTransitionsTheme(builders:{
       TargetPlatform.android:CupertinoPageTransitionsBuilder(),
       TargetPlatform.iOS:CupertinoPageTransitionsBuilder(),
     }),
