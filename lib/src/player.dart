@@ -171,6 +171,24 @@ class BackgroundMusic extends ChangeNotifier {
       await player.seek(Duration.zero);
     }
   }
+  void moveQueue(int oldIndex,int newIndex){
+    if(oldIndex<0||oldIndex>=queue.length)return;
+    if(newIndex>oldIndex)newIndex--;
+    newIndex=newIndex.clamp(0,queue.length-1).toInt();
+    final playingItem=queue[queueIndex];
+    final item=queue.removeAt(oldIndex);
+    queue.insert(newIndex,item);
+    queueIndex=queue.indexOf(playingItem);
+    notifyListeners();
+  }
+
+  Future<void> setBandGain(AndroidEqualizerBand band,double gain) async{
+    await equalizer.setEnabled(true);
+    await band.setGain(gain);
+    library?.setEqualizer('مخصص');
+    notifyListeners();
+  }
+
   Future<void> previous() async {
     if(queue.isEmpty)return;
     if(player.position>const Duration(seconds:4)){
@@ -251,6 +269,71 @@ class AudioDetail extends StatelessWidget {
   const AudioDetail({super.key,required this.music});
   final BackgroundMusic music;
 
+  void showQueue(BuildContext context){
+    showModalBottomSheet<void>(context:context,isScrollControlled:true,
+      builder:(ctx)=>SafeArea(child:FractionallySizedBox(
+        heightFactor:.75,child:Column(children:[
+          Padding(padding:const EdgeInsets.all(15),
+            child:Text('طابور التشغيل',
+              style:Theme.of(ctx).textTheme.titleLarge)),
+          Expanded(child:AnimatedBuilder(animation:music,builder:(ctx,_)=>
+            ReorderableListView.builder(
+              itemCount:music.queue.length,
+              onReorder:music.moveQueue,
+              itemBuilder:(ctx,i){
+                final item=music.queue[i];
+                return ListTile(key:ValueKey(item.source),
+                  leading:Icon(i==music.queueIndex?
+                    Icons.equalizer:Icons.drag_handle,
+                    color:MediaPalette.orange),
+                  title:Text(item.title,maxLines:1),
+                  subtitle:Text(item.album,maxLines:1),
+                  onTap:()async{
+                    await music.playQueue(List<MediaTrack>.of(music.queue),i);
+                  });
+              }))),
+        ]))));
+  }
+
+  void showEqualizer(BuildContext context){
+    showModalBottomSheet<void>(context:context,isScrollControlled:true,
+      builder:(ctx)=>SafeArea(child:Padding(
+        padding:const EdgeInsets.all(16),
+        child:FutureBuilder<AndroidEqualizerParameters>(
+          future:music.equalizer.parameters,
+          builder:(ctx,snapshot){
+            if(snapshot.hasError)return Text('المعادل غير مدعوم: ${snapshot.error}');
+            if(!snapshot.hasData)return const Center(
+              child:CircularProgressIndicator());
+            final parameters=snapshot.data!;
+            return StatefulBuilder(builder:(ctx,update)=>Column(
+              mainAxisSize:MainAxisSize.min,children:[
+                Text('معادل الصوت',
+                  style:Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height:10),
+                for(final band in parameters.bands)
+                  Row(children:[
+                    SizedBox(width:69,child:Text(
+                      '${band.centerFrequency.round()} Hz',
+                      style:const TextStyle(fontSize:10))),
+                    Expanded(child:Slider(
+                      value:band.gain.clamp(parameters.minDecibels,
+                        parameters.maxDecibels).toDouble(),
+                      min:parameters.minDecibels,
+                      max:parameters.maxDecibels,
+                      onChanged:(gain)async{
+                        await music.setBandGain(band,gain);
+                        update((){});
+                      })),
+                    SizedBox(width:38,child:Text(
+                      band.gain.toStringAsFixed(1))),
+                  ]),
+              ]));
+          }),
+      ))));
+  }
+
+
   String stamp(Duration v){
     final m=v.inMinutes.remainder(60).toString().padLeft(2,'0');
     final s=v.inSeconds.remainder(60).toString().padLeft(2,'0');
@@ -261,7 +344,12 @@ class AudioDetail extends StatelessWidget {
   Widget build(BuildContext context)=>AnimatedBuilder(
     animation:music,
     builder:(context,_)=>Scaffold(
-    appBar:AppBar(title:const Text('مشغّل الصوت')),
+    appBar:AppBar(title:const Text('مشغّل الصوت'),actions:[
+      IconButton(icon:const Icon(Icons.queue_music),
+        tooltip:'ترتيب قائمة التشغيل',onPressed:()=>showQueue(context)),
+      IconButton(icon:const Icon(Icons.equalizer),
+        tooltip:'ضبط ترددات الصوت',onPressed:()=>showEqualizer(context)),
+    ]),
     body:Padding(
       padding:const EdgeInsets.all(24),
       child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
@@ -501,6 +589,15 @@ class _VideoDetailState extends State<VideoDetail> {
           if(video!=null)IconButton(
             tooltip:'سرعة التشغيل',icon:const Icon(Icons.speed),
             onPressed:_changeSpeed),
+          if(video!=null&&cues.isNotEmpty)PopupMenuButton<int>(
+            tooltip:'ضبط توقيت الترجمة',
+            icon:const Icon(Icons.sync),
+            onSelected:(ms)=>setState(()=>
+              subtitleOffset+=Duration(milliseconds:ms)),
+            itemBuilder:(ctx)=>const [
+              PopupMenuItem(value:-500,child:Text('الترجمة قبل 0.5 ثانية')),
+              PopupMenuItem(value:500,child:Text('الترجمة بعد 0.5 ثانية')),
+            ]),
           if(video!=null)IconButton(
             tooltip:'إضافة ترجمة SRT أو VTT',
             icon:const Icon(Icons.closed_caption),
