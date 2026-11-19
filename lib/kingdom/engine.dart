@@ -178,7 +178,8 @@ class KingdomEngine extends ChangeNotifier {
       (x-t.x).abs()+(y-t.y).abs()<=16);
 
   GameResult construct(Facility kind,int x,int y) {
-    if(!inside(x,y)||landAt(x,y)==Land.river||landAt(x,y)==Land.hill) {
+    if (!inside(x,y) || landAt(x,y)==Land.river ||
+        landAt(x,y)==Land.bridge || landAt(x,y)==Land.hill) {
       return _fail('الأرض غير صالحة للبناء');
     }
     if(!_nearTown(x,y)) return _fail('ابنِ بالقرب من إحدى المدن');
