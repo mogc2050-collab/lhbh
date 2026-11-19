@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+import 'device_media.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -8,32 +10,110 @@ import 'library.dart';
 import 'media_utils.dart';
 import 'theme.dart';
 
-/// Single global player keeps playing when user changes screens or locks phone.
+/// A physical file or a user-selected phone media URI, not a stream extractor.
+class MediaTrack {
+  const MediaTrack({required this.source,required this.title,this.album='من هاتفي'});
+  final String source,title,album;
+}
+
 class BackgroundMusic extends ChangeNotifier {
   final player=AudioPlayer();
   String? currentTitle;
   String? currentPath;
+  List<MediaTrack> queue=[];
+  int queueIndex=0;
+  bool shuffle=false;
+  bool repeatOne=false;
+  bool _changing=false;
+  late final StreamSubscription<PlayerState> _completed;
+  final _random=Random();
+
+  BackgroundMusic(){
+    _completed=player.playerStateStream.listen((state){
+      if(state.processingState==ProcessingState.completed && !_changing){
+        unawaited(next());
+      }
+      notifyListeners();
+    });
+  }
 
   Future<void> open(String path,{String? title}) async {
-    final name=title ?? path.split('/').last;
-    currentTitle=name;
-    currentPath=path;
-    notifyListeners();
-    await player.setAudioSource(AudioSource.uri(
-      Uri.file(path),
-      tag:MediaItem(id:path,title:name,album:'iBetoo Media'),
-    ));
-    unawaited(player.play());
+    await playQueue([MediaTrack(source:path,
+      title:title??path.split('/').last)],0);
+  }
+  Future<void> playQueue(List<MediaTrack> items,int startIndex) async {
+    if(items.isEmpty)return;
+    queue=List<MediaTrack>.from(items);
+    await _openIndex(startIndex.clamp(0,items.length-1).toInt());
   }
 
+  Future<void> _openIndex(int index) async {
+    if(index<0||index>=queue.length)return;
+    _changing=true;
+    try{
+      final track=queue[index];
+      await player.stop();
+      final src=await PhoneLibrary.playableAudio(track.source);
+      await player.setAudioSource(AudioSource.uri(
+        src.startsWith('content://')||src.startsWith('https://')?
+          Uri.parse(src):Uri.file(src),
+        tag:MediaItem(id:track.source,title:track.title,album:track.album),
+      ));
+      queueIndex=index;
+      currentTitle=track.title;
+      currentPath=track.source;
+      notifyListeners();
+      unawaited(player.play());
+    }finally{
+      _changing=false;
+    }
+  }
+
+  Future<void> next() async {
+    if(_changing||queue.isEmpty)return;
+    if(repeatOne){
+      await player.seek(Duration.zero);
+      unawaited(player.play());
+      return;
+    }
+    if(shuffle&&queue.length>1) {
+      var randomIndex=_random.nextInt(queue.length);
+      if(randomIndex==queueIndex)randomIndex=(randomIndex+1)%queue.length;
+      await _openIndex(randomIndex);
+      return;
+    }
+    if(queueIndex+1<queue.length){
+      await _openIndex(queueIndex+1);
+    }else{
+      await player.pause();
+      await player.seek(Duration.zero);
+    }
+  }
+  Future<void> previous() async {
+    if(queue.isEmpty)return;
+    if(player.position>const Duration(seconds:4)){
+      await player.seek(Duration.zero);
+      return;
+    }
+    await _openIndex(queueIndex>0?queueIndex-1:0);
+  }
   Future<void> toggle() async {
-    if(player.playing) {await player.pause();}
-    else {unawaited(player.play());}
+    if(player.playing){await player.pause();}
+    else if(player.processingState==ProcessingState.completed){
+      await player.seek(Duration.zero);
+      unawaited(player.play());
+    }else{unawaited(player.play());}
     notifyListeners();
   }
+  void toggleShuffle(){shuffle=!shuffle;notifyListeners();}
+  void toggleRepeat(){repeatOne=!repeatOne;notifyListeners();}
 
   @override
-  void dispose(){unawaited(player.dispose());super.dispose();}
+  void dispose(){
+    unawaited(_completed.cancel());
+    unawaited(player.dispose());
+    super.dispose();
+  }
 }
 
 class MiniMusic extends StatelessWidget {
@@ -64,6 +144,8 @@ class MiniMusic extends StatelessWidget {
               child:Text(music.currentTitle!,maxLines:1,
                 overflow:TextOverflow.ellipsis,
                 style:const TextStyle(fontWeight:FontWeight.w700)))),
+            IconButton(onPressed:music.previous,
+              icon:const Icon(Icons.skip_previous_rounded),tooltip:'السابق'),
             StreamBuilder<PlayerState>(
               stream:music.player.playerStateStream,
               builder:(ctx,snapshot)=>IconButton(
@@ -72,6 +154,8 @@ class MiniMusic extends StatelessWidget {
                 icon:Icon(snapshot.data?.playing==true ?
                   Icons.pause_rounded:Icons.play_arrow_rounded),
               )),
+            IconButton(onPressed:music.next,
+              icon:const Icon(Icons.skip_next_rounded),tooltip:'التالي'),
           ]),
         ),
       );
@@ -127,16 +211,30 @@ class AudioDetail extends StatelessWidget {
             ]);
           }),
         const SizedBox(height:20),
-        StreamBuilder<PlayerState>(
-          stream:music.player.playerStateStream,
-          builder:(ctx,snapshot)=>IconButton.filled(
-            style:IconButton.styleFrom(
-              minimumSize:const Size(70,70),
-              backgroundColor:MediaPalette.orange),
-            icon:Icon(snapshot.data?.playing==true ?
-              Icons.pause_rounded:Icons.play_arrow_rounded,size:35),
-            onPressed:music.toggle,
-          )),
+        AnimatedBuilder(animation:music,builder:(ctx,_)=>Row(
+          mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[
+            IconButton(onPressed:music.toggleShuffle,
+              icon:Icon(Icons.shuffle,color:music.shuffle?MediaPalette.orange:null)),
+            IconButton(onPressed:music.previous,iconSize:33,
+              icon:const Icon(Icons.skip_previous_rounded)),
+            StreamBuilder<PlayerState>(stream:music.player.playerStateStream,
+              builder:(ctx,snapshot)=>IconButton.filled(
+                style:IconButton.styleFrom(minimumSize:const Size(70,70),
+                  backgroundColor:MediaPalette.orange),
+                icon:Icon(snapshot.data?.playing==true?
+                  Icons.pause_rounded:Icons.play_arrow_rounded,size:35),
+                onPressed:music.toggle)),
+            IconButton(onPressed:music.next,iconSize:33,
+              icon:const Icon(Icons.skip_next_rounded)),
+            IconButton(onPressed:music.toggleRepeat,
+              icon:Icon(Icons.repeat_one,
+                color:music.repeatOne?MediaPalette.orange:null)),
+          ])),
+        const SizedBox(height:10),
+        AnimatedBuilder(animation:music,builder:(_,__)=>Text(
+          music.queue.isEmpty?'': 'المقطع '+
+          (music.queueIndex+1).toString()+' من '+music.queue.length.toString(),
+          style:Theme.of(context).textTheme.bodySmall)),
         const SizedBox(height:24),
         const Text('التشغيل يستمر في الخلفية مع أزرار من شاشة القفل.',
           textAlign:TextAlign.center),
