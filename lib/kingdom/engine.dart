@@ -133,9 +133,19 @@ class KingdomEngine extends ChangeNotifier {
   void _give(Map<Good,int> items) {
     for(final e in items.entries) stock[e.key]=amount(e.key)+e.value;
   }
-  Map<Good,int> buildCost(Facility kind,{int level=1})=>
-      {for(final e in kind.info.cost.entries)
-         e.key: (e.value*(1+(level-1)*.75)).ceil()};
+  Map<Good,int> buildCost(Facility kind,{int level=1}) {
+    final cost={for(final e in kind.info.cost.entries)
+       e.key:(e.value*(1+(level-1)*.75)).ceil()};
+    // Luxury goods are used in advanced housing and service buildings.
+    if(kind==Facility.house && level>=3) {
+      cost[Good.furniture]=2*(level-2);
+      if(level>=4) cost[Good.cloth]=level-2;
+    }
+    if(kind==Facility.tavern && level>=3) {
+      cost[Good.cloth]=2*(level-2);
+    }
+    return cost;
+  }
   bool _nearTown(int x,int y)=>towns.any((t)=>
       (x-t.x).abs()+(y-t.y).abs()<=16);
 
@@ -325,7 +335,12 @@ class KingdomEngine extends ChangeNotifier {
     final seasonFactor=1+.09*sin(day*1.4+g.index);
     final factor=city.factors[g]??1;
     final spread=buying?1.24:.72;
-    return max(1,(g.base*factor*scarcity*seasonFactor*spread).round());
+    // Owning a local market really matters: better deals in this city.
+    final localMarket=sites.any((s)=>s.owned&&s.kind==Facility.market&&
+      (s.x-city.x).abs()+(s.y-city.y).abs()<=16);
+    final marketBonus=localMarket?(buying?.94:1.06):1.0;
+    return max(1,(g.base*factor*scarcity*seasonFactor*spread*
+      marketBonus).round());
   }
   GameResult trade(Good g,int qty,{required bool buying}) {
     if(g==Good.gold||qty<1||qty>999) return _fail('كمية غير صالحة');
