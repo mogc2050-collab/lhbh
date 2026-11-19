@@ -188,19 +188,21 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
     }
     private fun thumbnail(raw:String):ByteArray {
         val uri=checkedUri(raw)
-        val bitmap:Bitmap?=try{
-            if(Build.VERSION.SDK_INT>=29){
-                activity.contentResolver.loadThumbnail(uri,Size(192,192),null)
-            }else{
-                val retriever=MediaMetadataRetriever()
-                try{
-                    retriever.setDataSource(activity,uri)
-                    val embedded=retriever.embeddedPicture
-                    if(embedded!=null)BitmapFactory.decodeByteArray(
-                        embedded,0,embedded.size) else retriever.frameAtTime
-                }finally{retriever.release()}
-            }
-        }catch(_:Exception){null}
+        var bitmap:Bitmap?=null
+        if(Build.VERSION.SDK_INT>=29){
+            try{bitmap=activity.contentResolver.loadThumbnail(
+                uri,Size(192,192),null)}catch(_:Exception){}
+        }
+        if(bitmap==null){
+            val retriever=MediaMetadataRetriever()
+            try{
+                retriever.setDataSource(activity,uri)
+                val embedded=retriever.embeddedPicture
+                bitmap=if(embedded!=null)BitmapFactory.decodeByteArray(
+                    embedded,0,embedded.size) else retriever.frameAtTime
+            }catch(_:Exception){}
+            finally{retriever.release()}
+        }
         val out=ByteArrayOutputStream()
         bitmap?.compress(Bitmap.CompressFormat.JPEG,78,out)
         return out.toByteArray()
