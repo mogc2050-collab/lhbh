@@ -230,7 +230,7 @@ class _MediaSettings extends StatelessWidget {
           trailing:DropdownButton<String>(
             value:library.eqPreset,
             underline:const SizedBox.shrink(),
-            items:const ['طبيعي','Bass','Rock','صوت بشري','Cinema']
+            items:const ['طبيعي','Bass','Rock','صوت بشري','Cinema','مخصص']
               .map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),
             onChanged:(v)async{
               if(v==null)return;
