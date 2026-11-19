@@ -68,7 +68,7 @@ ThemeData mediaTheme(Brightness brightness) {
       scrolledUnderElevation:0,
       elevation:0,
       centerTitle:false,
-      toolbarHeight:66,
+      toolbarHeight:52,
       titleTextStyle:TextStyle(color:foreground,fontSize:20,
         fontWeight:FontWeight.w900,letterSpacing:-.35),
     ),
@@ -130,12 +130,12 @@ ThemeData mediaTheme(Brightness brightness) {
       foregroundColor:Colors.white,elevation:3),
     navigationBarTheme:NavigationBarThemeData(
       backgroundColor:panel,
-      elevation:0,height:74,
+      elevation:0,height:58,
       indicatorColor:MediaPalette.orange.withValues(alpha:.14),
       labelTextStyle:WidgetStatePropertyAll(
-        TextStyle(color:foreground,fontWeight:FontWeight.w800,fontSize:11)),
+        TextStyle(color:foreground,fontWeight:FontWeight.w800,fontSize:10)),
       iconTheme:WidgetStatePropertyAll(
-        IconThemeData(color:foreground,size:24)),
+        IconThemeData(color:foreground,size:21)),
     ),
     tabBarTheme:TabBarThemeData(
       labelColor:MediaPalette.orange,
