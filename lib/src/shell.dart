@@ -129,6 +129,20 @@ class _MediaShellState extends State<MediaShell> {
               if(account==null){googleLogin();}
               else{signOut();}
             }),
+          AnimatedBuilder(animation:phone,builder:(ctx,_)=>ListTile(
+            leading:Icon(phone.notificationsGranted?
+              Icons.notifications_active_outlined:
+              Icons.notifications_off_outlined),
+            title:const Text('تفعيل إشعارات التنزيل والتشغيل'),
+            subtitle:Text(phone.notificationsGranted?
+              'مسموح بها من أندرويد':
+              'اضغط لطلب صلاحية الإشعارات وسائط الهاتف'),
+            trailing:const Icon(Icons.chevron_left),
+            onTap:()async{
+              await phone.refresh(askPermissions:true);
+              if(ctx.mounted)Navigator.pop(ctx);
+            },
+          )),
           ListTile(leading:const Icon(Icons.play_circle_outline),
             title:const Text('افتح يوتيوب وسجّل دخولك في المتصفح'),
             subtitle:const Text('تسجيل آمن خارج WebView؛ إعلانات يوتيوب تتبع يوتيوب.'),
