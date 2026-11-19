@@ -314,7 +314,7 @@ class _MediaSettings extends StatelessWidget {
           onTap:googleBusy?null:account==null?onLogin:onLogout),
         const SizedBox(height:15),
         const Padding(padding:EdgeInsets.all(12),
-          child:Text('iBetoo Media لا يحتوي على مدير تنزيلات. المتصفح يستخدم '
+          child:Text('iBetoo Media يدعم تنزيل روابط الملفات المباشرة عبر أندرويد. المتصفح يستخدم '
             'Android WebView، ولا يدّعي دعم إضافات Chrome أو الحظر الكامل '
             'لمتتبعات المواقع. كل قوائم الوسائط محفوظة على الجهاز.',
             textAlign:TextAlign.center,
