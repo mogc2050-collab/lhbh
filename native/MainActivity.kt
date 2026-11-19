@@ -56,7 +56,8 @@ class MainActivity: AudioServiceFragmentActivity() {
         if(!source.isFile||!source.path.startsWith(root.path+File.separator)){
             throw IllegalArgumentException("Sharing allowed only for app-owned files")
         }
-        val clean=name.replace(Regex("[^a-zA-Z0-9._ ()\\u0600-\\u06FF]"),"_").take(120)
+        val clean=name.filter { it.isLetterOrDigit() || it in " ._-()" }
+            .trim().take(120)
         val output=File(cacheDir,"share_"+System.currentTimeMillis()+"_"+clean)
         source.inputStream().use{src->
             output.outputStream().use{dest->src.copyTo(dest)}
