@@ -5,10 +5,11 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'catalog.dart';
+import 'world_regions.dart';
 
 /// Single source of truth. All game rules run on-device, without APIs or network.
 class GameState extends ChangeNotifier {
-  static const int worldSize = 12;
+  static const int worldSize = 32;
   static const String saveKey = 'medieval_life_save_v1';
   final Map<Resource, int> inventory = {for (final r in Resource.values) r: 0};
   final Map<Resource, int> merchantStock = {for (final r in Resource.values) r: 150};
@@ -20,6 +21,18 @@ class GameState extends ChangeNotifier {
     'المزاج': 80, 'النظافة': 90,
   };
   final List<Point<int>> route = [];
+  // Existing save schema v1 remains loadable; new keys have safe defaults.
+  String currentCityId = 'capital';
+  int reputation = 65;
+  int loanDebt = 0;
+  int taxPolicy = 1; // 0 low, 1 balanced, 2 high
+  int caravanStake = 0;
+  int caravanMaturityDay = 0;
+  String caravanDestinationId = '';
+  final Map<String, Map<Resource, int>> regionalStock = {};
+  final Map<String, int> regionalGold = {};
+  KingdomCity get city => cityById(currentCityId);
+
   int nextBuildingId = 1;
   int minute = 8 * 60;
   int speed = 1;
@@ -57,6 +70,18 @@ class GameState extends ChangeNotifier {
     _seed(BuildingType.market, 4, 8);
     _seed(BuildingType.bakery, 7, 2);
     _lastProductionSlot = minute ~/ 30;
+    _initRegions();
+  }
+
+  void _initRegions() {
+    for (final region in kingdomCities) {
+      regionalStock.putIfAbsent(region.id, () => {
+        for (final r in Resource.values.where((r) => r != Resource.gold))
+          r: (region.id == 'capital' ? merchantStock[r] ?? 150 :
+              (230 / (region.priceFactor[r] ?? 1.0)).round().clamp(35, 380)).toInt(),
+      });
+      regionalGold.putIfAbsent(region.id, () => region.id == 'capital' ? merchantGold : 20000);
+    }
   }
 
   void _seed(BuildingType t, int x, int y) => buildings.add(Building(nextBuildingId++, t, x, y));
@@ -72,7 +97,12 @@ class GameState extends ChangeNotifier {
   int get workersNeeded => buildings.fold<int>(0, (p, b) => p + b.type.spec.work * b.level);
   int get storageCapacity => 950 + buildings.where((b) => b.type == BuildingType.warehouse).fold<int>(0, (p, b) => p + 500 * b.level);
   int get stored => Resource.values.where((r) => r != Resource.gold).fold<int>(0, (p, r) => p + count(r));
-  int get rentPerDay => buildings.where((b) => b.type == BuildingType.house).fold<int>(0, (p, b) => p + 48 * b.level);
+  int get rentPerDay {
+    final base = buildings.where((b) => b.type == BuildingType.house)
+        .fold<int>(0, (p, b) => p + 48 * b.level);
+    final factor = [0.75, 1.0, 1.40][taxPolicy];
+    return (base * factor * (reputation < 25 ? 0.65 : 1.0)).round();
+  }
   int get upkeepPerDay => workersNeeded * 4;
   bool get hasLabor => workersNeeded <= housing;
   bool get isNight => hour < 6 || hour >= 19;
@@ -122,6 +152,18 @@ class GameState extends ChangeNotifier {
     'breadEaten': breadEaten,
     'paused': paused,
     'soundOn': soundOn,
+    'currentCityId': currentCityId,
+    'reputation': reputation,
+    'loanDebt': loanDebt,
+    'taxPolicy': taxPolicy,
+    'caravanStake': caravanStake,
+    'caravanMaturityDay': caravanMaturityDay,
+    'caravanDestinationId': caravanDestinationId,
+    'regionalStock': {
+      for (final entry in regionalStock.entries)
+        entry.key: {for (final r in Resource.values) r.name: entry.value[r] ?? 0},
+    },
+    'regionalGold': regionalGold,
   };
 
   void _restore(Map<String, dynamic> data) {
@@ -162,6 +204,43 @@ class GameState extends ChangeNotifier {
     breadEaten = number('breadEaten', 0);
     paused = data['paused'] == true;
     soundOn = data['soundOn'] != false;
+    currentCityId = cityById(data['currentCityId'] as String? ?? 'capital').id;
+    reputation = number('reputation', 65).clamp(0, 100).toInt();
+    loanDebt = max(0, number('loanDebt', 0));
+    taxPolicy = number('taxPolicy', 1).clamp(0, 2).toInt();
+    caravanStake = max(0, number('caravanStake', 0));
+    caravanMaturityDay = max(0, number('caravanMaturityDay', 0));
+    caravanDestinationId = data['caravanDestinationId'] as String? ?? '';
+    _initRegions();
+    final savedStocks = data['regionalStock'];
+    if (savedStocks is Map) {
+      for (final region in kingdomCities) {
+        final stocks = savedStocks[region.id];
+        if (stocks is Map) {
+          for (final r in Resource.values.where((r) => r != Resource.gold)) {
+            if (stocks[r.name] is num) {
+              regionalStock[region.id]![r] = (stocks[r.name] as num).toInt().clamp(0, 999999).toInt();
+            }
+          }
+        }
+      }
+    } else {
+      // Migration: legacy saves stored only the capital vendor's stock.
+      regionalStock['capital'] = Map<Resource, int>.from(merchantStock);
+    }
+    final savedGold = data['regionalGold'];
+    if (savedGold is Map) {
+      for (final region in kingdomCities) {
+        if (savedGold[region.id] is num) {
+          regionalGold[region.id] = max(0, (savedGold[region.id] as num).toInt());
+        }
+      }
+    } else {
+      regionalGold['capital'] = merchantGold;
+    }
+    // Keep existing market widgets pointed at the market of the active city.
+    merchantStock.addAll(regionalStock[currentCityId]!);
+    merchantGold = regionalGold[currentCityId]!;
     _lastProductionSlot = minute ~/ 30;
     notifyListeners();
   }
@@ -196,9 +275,27 @@ class GameState extends ChangeNotifier {
   void _newDay() {
     inventory[Resource.gold] = count(Resource.gold) + rentPerDay;
     inventory[Resource.gold] = max(0, count(Resource.gold) - upkeepPerDay);
-    merchantGold = min(45000, merchantGold + 500);
-    for (final r in Resource.values.where((r) => r != Resource.gold)) {
-      merchantStock[r] = min(400, (merchantStock[r] ?? 0) + 30);
+    // Simulated cities produce/consume every day even when the hero is away.
+    for (final region in kingdomCities) {
+      final stock = regionalStock[region.id]!;
+      for (final r in Resource.values.where((r) => r != Resource.gold)) {
+        final supply = region.priceFactor[r] ?? 1;
+        final production = (35 / supply).round();
+        final consumption = (19 * supply).round();
+        stock[r] = (stock[r]! + production - consumption).clamp(12, 550).toInt();
+      }
+      regionalGold[region.id] = min(65000, regionalGold[region.id]! + 350);
+    }
+    merchantStock.addAll(regionalStock[currentCityId]!);
+    merchantGold = regionalGold[currentCityId]!;
+    if (loanDebt > 0) {
+      loanDebt += max(1, (loanDebt * 0.02).ceil());
+      _log('فائدة قرض يومية 2%: إجمالي الدين $loanDebt ذهب');
+    }
+    reputation = (reputation + (taxPolicy == 0 ? 2 : taxPolicy == 2 ? -3 : 1))
+        .clamp(0, 100).toInt();
+    if (caravanStake > 0 && day >= caravanMaturityDay) {
+      _settleCaravan();
     }
     history.insert(0, TradeRecord('إيجارات +$rentPerDay | مصروفات -$upkeepPerDay', day));
     if (history.length > 30) history.removeLast();
@@ -279,8 +376,9 @@ class GameState extends ChangeNotifier {
     final stock = merchantStock[r] ?? 100;
     final seasonal = 0.12 * sin(day * 1.37 + r.index * 2.14);
     final multiplier = (1 + (160 - stock) / 600 + seasonal).clamp(0.78, 1.50);
+    final regional = city.priceFactor[r] ?? 1.0;
     final spread = buying ? 1.24 : 0.72;
-    return max(1, (r.basePrice * multiplier * spread).round());
+    return max(1, (r.basePrice * multiplier * regional * spread).round());
   }
 
   GameAction trade(Resource r, int qty, {required bool buying}) {
@@ -308,10 +406,13 @@ class GameState extends ChangeNotifier {
       _log('بعت $qty ${r.label} وربحت $total ذهب');
       xp += max(2, qty ~/ 15);
     }
+    regionalStock[currentCityId] = Map<Resource, int>.from(merchantStock);
+    regionalGold[currentCityId] = merchantGold;
     notifyListeners();
     return const GameAction(true, 'تم تنفيذ الصفقة بنجاح');
   }
 
+  bool isWaterTile(int x, int y) => y >= 17 && y <= 19 && x < 17 && (x < 5 || x > 7);
   bool inside(int x, int y) => x >= 0 && y >= 0 && x < worldSize && y < worldSize;
   Building? buildingAt(int x, int y) {
     for (final b in buildings) {
@@ -319,7 +420,9 @@ class GameState extends ChangeNotifier {
     }
     return null;
   }
-  bool canPlace(int x, int y) => inside(x, y) && buildingAt(x, y) == null && !(x == px && y == py);
+  bool canPlace(int x, int y) => inside(x, y) && !isWaterTile(x, y) &&
+      !kingdomCities.any((c) => c.x == x && c.y == y) &&
+      buildingAt(x, y) == null && !(x == px && y == py);
 
   Map<Resource, int> buildingCost(BuildingType type, {int upgradeLevel = 1}) => {
     for (final e in type.spec.cost.entries)
@@ -332,7 +435,7 @@ class GameState extends ChangeNotifier {
 
   GameAction build(BuildingType type, int x, int y) {
     if (!inside(x, y)) return const GameAction(false, 'الموقع خارج حدود القرية');
-    if (!canPlace(x, y)) return const GameAction(false, 'الموقع مشغول');
+    if (!canPlace(x, y)) return const GameAction(false, 'الموقع مشغول أو أرض غير صالحة للبناء');
     final cost = buildingCost(type);
     if (!canAfford(cost)) return const GameAction(false, 'مواد البناء أو الذهب غير كافية');
     _spend(cost);
@@ -372,6 +475,7 @@ class GameState extends ChangeNotifier {
     buildings.remove(b);
     inventory[Resource.gold] = count(Resource.gold) + value;
     merchantGold -= value;
+    regionalGold[currentCityId] = merchantGold;
     xp += 12;
     _log('بعت ${b.type.spec.name} بالمستوى ${b.level} مقابل $value ذهب');
     notifyListeners();
@@ -448,6 +552,129 @@ class GameState extends ChangeNotifier {
     return const GameAction(true, 'تم تنفيذ الإجراء بنجاح');
   }
 
+  /// Travel is not teleportation: it costs fare, food, water, energy and time.
+  GameAction travelTo(String destinationId) {
+    final target = cityById(destinationId);
+    if (target.id == currentCityId) {
+      return const GameAction(false, 'أنت موجود بالفعل في هذه المدينة');
+    }
+    final hours = travelHours(city, target);
+    final fare = travelFare(city, target);
+    final food = max(1, hours ~/ 4);
+    if (count(Resource.gold) < fare) return const GameAction(false, 'الذهب لا يكفي ثمن السفر');
+    if (count(Resource.bread) < food || count(Resource.water) < food) {
+      return const GameAction(false, 'جهّز الخبز والماء اللازمين للسفر');
+    }
+    if (needs['الطاقة']! < 15) return const GameAction(false, 'البطل مرهق ويحتاج إلى النوم');
+    inventory[Resource.gold] = count(Resource.gold) - fare;
+    inventory[Resource.bread] = count(Resource.bread) - food;
+    inventory[Resource.water] = count(Resource.water) - food;
+    _changeNeed('الطاقة', -min(38, hours * 3).toDouble());
+    _changeNeed('الجوع', -min(25, hours * 2).toDouble());
+    _changeNeed('العطش', -min(28, hours * 2).toDouble());
+    // Save vendor state before changing region.
+    regionalStock[currentCityId] = Map<Resource, int>.from(merchantStock);
+    regionalGold[currentCityId] = merchantGold;
+    final oldDay = day;
+    minute += hours * 60;
+    while (_lastProductionSlot < minute ~/ 30) {
+      _lastProductionSlot++;
+      _produce();
+      _degradeNeeds();
+    }
+    for (var d = oldDay; d < day; d++) { _newDay(); }
+    currentCityId = target.id;
+    merchantStock.addAll(regionalStock[target.id]!);
+    merchantGold = regionalGold[target.id]!;
+    px = target.x;
+    py = target.y;
+    route.clear();
+    // Deterministic risk roll, reproducible in tests/offline play.
+    final roll = ((day * 17 + target.x * 13 + target.y * 7 + xp) % 100) / 100.0;
+    var incident = '';
+    if (roll < target.danger) {
+      final loss = min(count(Resource.gold), (fare * 0.6).round());
+      inventory[Resource.gold] = count(Resource.gold) - loss;
+      _changeNeed('الصحة', -8);
+      reputation = max(0, reputation - 2);
+      incident = '، وتعرضت القافلة للخطر وخسرت $loss ذهب';
+    } else {
+      xp += 20 + hours;
+    }
+    _log('سافرت إلى ${target.name} بتكلفة $fare ذهب و$food طعام/ماء$incident');
+    notifyListeners();
+    return GameAction(true, 'وصلت ${target.name} بعد $hours ساعات$incident');
+  }
+
+  GameAction chooseTaxes(int policy) {
+    if (policy < 0 || policy > 2) return const GameAction(false, 'سياسة غير صالحة');
+    taxPolicy = policy;
+    _log('غيرت الضرائب إلى ${['مخفّضة', 'متوازنة', 'مرتفعة'][policy]}');
+    notifyListeners();
+    return const GameAction(true, 'تم تغيير الضرائب؛ سيتغير دخل الإيجارات ورضا السكان');
+  }
+
+  GameAction borrow(int amount) {
+    if (amount <= 0 || amount > 2000 || loanDebt + amount > 3000) {
+      return const GameAction(false, 'حد القروض الأقصى 3,000 ذهب');
+    }
+    if (reputation < 30) return const GameAction(false, 'سمعتك ضعيفة للحصول على قرض');
+    loanDebt += amount;
+    inventory[Resource.gold] = count(Resource.gold) + amount;
+    _log('اقترضت $amount ذهب بفائدة مركبة 2% لكل يوم لعبة');
+    notifyListeners();
+    return GameAction(true, 'حصلت على $amount ذهب؛ لا تنسَ فوائد الدين');
+  }
+
+  GameAction repay(int amount) {
+    if (loanDebt <= 0) return const GameAction(false, 'لا يوجد دين');
+    final payment = min(amount, loanDebt);
+    if (payment < 1 || count(Resource.gold) < payment) {
+      return const GameAction(false, 'لا تملك ذهبًا كافيًا للسداد');
+    }
+    inventory[Resource.gold] = count(Resource.gold) - payment;
+    loanDebt -= payment;
+    reputation = min(100, reputation + 2);
+    _log('سددت $payment ذهب من القرض');
+    notifyListeners();
+    return GameAction(true, 'تم سداد $payment ذهب، المتبقي $loanDebt');
+  }
+
+  GameAction investCaravan(int amount, String destinationId) {
+    if (caravanStake > 0) return const GameAction(false, 'لديك قافلة استثمار قائمة بالفعل');
+    if (amount < 100 || amount > 3000 || count(Resource.gold) < amount) {
+      return const GameAction(false, 'استثمار غير صالح أو رصيد غير كافٍ');
+    }
+    final destination = cityById(destinationId);
+    if (destination.id == currentCityId) {
+      return const GameAction(false, 'اختر مدينة أخرى لتوجيه القافلة إليها');
+    }
+    inventory[Resource.gold] = count(Resource.gold) - amount;
+    caravanStake = amount;
+    caravanDestinationId = destinationId;
+    caravanMaturityDay = day + 2 + travelHours(city, destination) ~/ 4;
+    _log('أرسلت قافلة استثمار $amount ذهب إلى ${destination.name} حتى يوم $caravanMaturityDay');
+    notifyListeners();
+    return const GameAction(true, 'انطلقت القافلة، والعائد ليس مضمونًا');
+  }
+
+  void _settleCaravan() {
+    final destination = cityById(caravanDestinationId);
+    final amount = caravanStake;
+    final riskRoll = ((day * 23 + destination.x * 7 + amount ~/ 25) % 100) / 100.0;
+    // An adverse result loses part of the stake; good trade creates profit.
+    final fraction = riskRoll < destination.danger ? -0.42 :
+        riskRoll < destination.danger + 0.26 ? -0.10 :
+        riskRoll < 0.79 ? 0.12 : 0.31;
+    final payout = max(0, (amount * (1 + fraction)).round());
+    inventory[Resource.gold] = count(Resource.gold) + payout;
+    _log('عادت قافلة ${destination.name}: استثمرت $amount، واستلمت $payout ذهب');
+    if (payout > amount) reputation = min(100, reputation + 2);
+    caravanStake = 0;
+    caravanMaturityDay = 0;
+    caravanDestinationId = '';
+  }
+
   static const quests = <String, String>{
     'build': 'ابنِ منزلًا إضافيًا',
     'sell': 'بع 30 وحدة من الخشب في السوق',
@@ -488,7 +715,7 @@ class GameState extends ChangeNotifier {
   /// Breadth first search on the grid. Build tiles are solid obstacles.
   GameAction walkTo(int targetX, int targetY) {
     if (!inside(targetX, targetY)) return const GameAction(false, 'خارج حدود القرية');
-    if (buildingAt(targetX, targetY) != null) return const GameAction(false, 'اختر طريقًا بجانب المبنى');
+    if (buildingAt(targetX, targetY) != null || isWaterTile(targetX, targetY)) return const GameAction(false, 'اختر أرضًا صالحة للمشي');
     final start = Point(px, py), target = Point(targetX, targetY);
     final queue = Queue<Point<int>>()..add(start);
     final parent = <Point<int>, Point<int>?>{start: null};
@@ -497,7 +724,7 @@ class GameState extends ChangeNotifier {
       if (node == target) break;
       for (final delta in const [Point(1, 0), Point(-1, 0), Point(0, 1), Point(0, -1)]) {
         final next = Point(node.x + delta.x, node.y + delta.y);
-        if (!inside(next.x, next.y) || buildingAt(next.x, next.y) != null || parent.containsKey(next)) continue;
+        if (!inside(next.x, next.y) || isWaterTile(next.x, next.y) || buildingAt(next.x, next.y) != null || parent.containsKey(next)) continue;
         parent[next] = node;
         queue.add(next);
       }

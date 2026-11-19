@@ -2,17 +2,21 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/catalog.dart';
 import '../game/game_state.dart';
+import '../game/world_regions.dart';
 
 /// Original vector-isometric art. It is painted in Flutter, not a noninteractive screenshot.
 class VillagePainter extends CustomPainter {
   final GameState game;
   final int? selectedX, selectedY;
   final bool buildMode;
-  VillagePainter(this.game, {this.selectedX, this.selectedY, this.buildMode = false});
+  final int animationFrame;
+  VillagePainter(this.game, {this.selectedX, this.selectedY,
+      this.buildMode = false, this.animationFrame = 0});
 
   static const double halfW = 53, halfH = 28;
-  static const double originX = 745, originY = 142;
-  static const Size sceneSize = Size(1490, 1040);
+  // Approximately seven times more buildable land than the original 12×12 map.
+  static const double originX = 1740, originY = 165;
+  static const Size sceneSize = Size(3500, 2050);
 
   static Offset center(int x, int y) => Offset(originX + (x - y) * halfW, originY + (x + y) * halfH);
   static math.Point<int> tileFrom(Offset p) {
@@ -56,12 +60,17 @@ class VillagePainter extends CustomPainter {
       colors: [Color(0xff86bcb4), Color(0xff326d50), Color(0xff264c38)],
       begin: Alignment.topCenter, end: Alignment.bottomCenter).createShader(bg));
     final rand = math.Random(43);
-    // Distant mountain range, fortress and waterfall, above the village.
+    // Three repeating ranges maintain a skyline across the expanded world.
+    for (var mountainSection = 0; mountainSection < 3; mountainSection++) {
+      canvas.save();
+      canvas.translate(mountainSection * 1400.0, 0);
     polygon(canvas, const [Offset(0, 250), Offset(130, 30), Offset(220, 160), Offset(390, 25), Offset(570, 185), Offset(790, 10), Offset(980, 177), Offset(1120, 20), Offset(1350, 170), Offset(1490, 50), Offset(1490, 390), Offset(0, 390)], const Color(0xff54796f));
     polygon(canvas, const [Offset(0, 330), Offset(160, 170), Offset(340, 305), Offset(510, 128), Offset(750, 270), Offset(920, 155), Offset(1160, 310), Offset(1300, 160), Offset(1490, 310), Offset(1490, 470), Offset(0, 470)], const Color(0xff346247));
     for (var i = 0; i < 90; i++) {
       final x = rand.nextDouble() * 1500, y = 190 + rand.nextDouble() * 260;
       polygon(canvas, [Offset(x, y-22), Offset(x-11, y+10), Offset(x+11, y+10)], Color.lerp(const Color(0xff0b533f), const Color(0xff628a48), rand.nextDouble())!);
+    }
+    canvas.restore();
     }
     // Castle silhouette and banner.
     for (final x in [608.0, 659.0, 714.0]) {
@@ -80,11 +89,19 @@ class VillagePainter extends CustomPainter {
         final y = row - x;
         if (y < 0 || y >= GameState.worldSize) continue;
         final p = center(x, y);
-        final road = x == 5 || y == 5 || (x >= 3 && x <= 8 && y == 8);
+        final road = x == 5 || y == 5 || x == 25 || y == 25 || (x >= 3 && x <= 8 && y == 8);
         final greens = [const Color(0xff69934d), const Color(0xff749e54), const Color(0xff7ea657), const Color(0xff658a4a)];
-        final ground = road ? (row.isEven ? const Color(0xffb3a18a) : const Color(0xffa39683)) : greens[(x * 7 + y * 13) % greens.length];
+        final water = game.isWaterTile(x, y);
+        final ground = water
+            ? (row.isEven ? const Color(0xff3b9eae) : const Color(0xff317c9c))
+            : road ? (row.isEven ? const Color(0xffb3a18a) : const Color(0xffa39683))
+            : greens[(x * 7 + y * 13) % greens.length];
         tile(canvas, p, ground, outline: Colors.black.withValues(alpha: 0.055));
-        if (road) {
+        if (water) {
+          final shimmer = math.sin(animationFrame * 0.38 + x * 1.6 + y).abs();
+          line(canvas, Offset(p.dx - 15, p.dy - 2), Offset(p.dx + 8 + shimmer * 8, p.dy - 2),
+              const Color(0xffb2e3ed).withValues(alpha: .22 + shimmer * .24), 1.7);
+        } else if (road) {
           for (var i = 0; i < 5; i++) {
             final ox = ((x * 11 + y * 17 + i * 29) % 70 - 35).toDouble();
             final oy = ((x * 3 + y * 9 + i * 7) % 24 - 12).toDouble();
@@ -110,13 +127,16 @@ class VillagePainter extends CustomPainter {
         final y = row - x;
         if (y < 0 || y >= GameState.worldSize) continue;
         final p = center(x, y);
-        final road = x == 5 || y == 5 || (x >= 3 && x <= 8 && y == 8);
+        final road = x == 5 || y == 5 || x == 25 || y == 25 || (x >= 3 && x <= 8 && y == 8);
         final building = game.buildingAt(x, y);
-        if (building != null) {
+        final town = kingdomCities.where((c) => c.x == x && c.y == y);
+        if (town.isNotEmpty) {
+          drawCityGate(canvas, p, town.first);
+        } else if (building != null) {
           drawBuilding(canvas, p, building);
-        } else if (!road && (x + y * 3) % 8 == 2 && !(x == game.px && y == game.py)) {
+        } else if (!game.isWaterTile(x, y) && !road && (x + y * 3) % 8 == 2 && !(x == game.px && y == game.py)) {
           drawTree(canvas, Offset(p.dx + 5, p.dy - 4), 0.76 + (x % 3) * 0.11);
-        } else if (!road && (x * 3 + y * 7) % 12 == 3) {
+        } else if (!game.isWaterTile(x, y) && !road && (x * 3 + y * 7) % 12 == 3) {
           drawFlower(canvas, p);
         }
         if (x == game.px && y == game.py) drawHero(canvas, p);
@@ -136,11 +156,44 @@ class VillagePainter extends CustomPainter {
         canvas.drawOval(circle, Paint()..shader = const RadialGradient(colors: [Color(0x99ffe29b), Color(0x00ffdd77)]).createShader(circle));
       }
     }
+    // Each city has its own identity and a persistent marker on the world map.
     // Little road signs for wayfinding.
     final sign = center(4, 5);
     line(canvas, Offset(sign.dx + 14, sign.dy + 10), Offset(sign.dx + 14, sign.dy - 30), const Color(0xff5b3c28), 5);
     canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(sign.dx - 17, sign.dy - 36, 65, 20), const Radius.circular(4)), Paint()..color = const Color(0xff5b3523));
     text(canvas, 'السوق', Offset(sign.dx + 15, sign.dy - 26), size: 13, color: const Color(0xffffe0a0));
+  }
+
+
+  void drawCityGate(Canvas canvas, Offset p, KingdomCity city) {
+    final pulse = 0.5 + 0.5 * math.sin(animationFrame * .35);
+    final active = game.currentCityId == city.id;
+    oval(canvas, Offset(p.dx, p.dy + 9), 50 + pulse * 7, 21 + pulse * 2,
+        active ? const Color(0x8870ff9b) : const Color(0x889fd5f3));
+    // Height, shading and drop shadows give buildings visible volume.
+    polygon(canvas, [Offset(p.dx-39,p.dy+8), Offset(p.dx,p.dy+27),
+      Offset(p.dx,p.dy-55), Offset(p.dx-39,p.dy-73)], const Color(0xff8a918a));
+    polygon(canvas, [Offset(p.dx,p.dy+27), Offset(p.dx+42,p.dy+5),
+      Offset(p.dx+42,p.dy-74), Offset(p.dx,p.dy-55)], const Color(0xffc5c0a5));
+    for (final xx in [-29.0, 14.0]) {
+      canvas.drawRect(Rect.fromLTWH(p.dx+xx,p.dy-112,19,71),
+          Paint()..color=const Color(0xffd5c7ab));
+      for (var i=0;i<3;i++) {
+        canvas.drawRect(Rect.fromLTWH(p.dx+xx+i*6,p.dy-119,5,13),
+          Paint()..color=const Color(0xfff1d6a8));
+      }
+    }
+    polygon(canvas,[Offset(p.dx-15,p.dy+20),Offset(p.dx+12,p.dy+6),
+      Offset(p.dx+12,p.dy-22),Offset(p.dx-15,p.dy-10)],const Color(0xff473324));
+    line(canvas,Offset(p.dx+2,p.dy-118),Offset(p.dx+2,p.dy-145),
+      const Color(0xff5a412c),2.6);
+    polygon(canvas,[Offset(p.dx+4,p.dy-146),Offset(p.dx+36,p.dy-139),
+      Offset(p.dx+4,p.dy-131)], active ? const Color(0xff7bc78c) : const Color(0xffffc966));
+    final box = Rect.fromCenter(center:Offset(p.dx,p.dy-169),width:158,height:30);
+    canvas.drawRRect(RRect.fromRectAndRadius(box,const Radius.circular(9)),
+      Paint()..color=const Color(0xe533281d));
+    text(canvas, city.name, Offset(p.dx,p.dy-169),size:15,
+      color:active?const Color(0xffd7ffb7):const Color(0xffffdc95));
   }
 
   void drawFlower(Canvas canvas, Offset p) {
@@ -239,6 +292,8 @@ class VillagePainter extends CustomPainter {
   }
 
   void drawHero(Canvas canvas, Offset p) {
+    final bob = math.sin(animationFrame * .7) * (game.route.isEmpty ? 1.2 : 3.6);
+    p = p + Offset(0, bob);
     oval(canvas, Offset(p.dx, p.dy + 9), 25, 11, const Color(0x6658ff91));
     oval(canvas, Offset(p.dx, p.dy + 9), 21, 8, const Color(0xff9ef8a1));
     oval(canvas, Offset(p.dx, p.dy + 8), 17, 5, const Color(0xff375e3d));

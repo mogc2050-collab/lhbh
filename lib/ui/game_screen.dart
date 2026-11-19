@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../game/catalog.dart';
 import '../game/game_state.dart';
+import '../game/world_regions.dart';
 import 'game_theme.dart';
 import 'world_painter.dart';
+import 'sound_director.dart';
 
 class GameScreen extends StatefulWidget {
   final GameState game;
@@ -17,6 +18,8 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   late final GameState g;
   final TransformationController camera = TransformationController();
   final List<Timer> timers = [];
+  final SoundDirector audio = SoundDirector();
+  int animationFrame = 0;
   bool cameraReady = false;
   bool showIntro = true;
   bool showGuide = true;
@@ -27,11 +30,15 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     g = widget.game;
+    audio.enabled = g.soundOn;
     g.addListener(_refresh);
     WidgetsBinding.instance.addObserver(this);
     timers.add(Timer.periodic(const Duration(seconds: 1), (_) => g.advance()));
     timers.add(Timer.periodic(const Duration(milliseconds: 260), (_) => g.stepWalk()));
     timers.add(Timer.periodic(const Duration(seconds: 15), (_) => g.save()));
+    timers.add(Timer.periodic(const Duration(milliseconds: 480), (_) {
+      if (mounted && !showIntro) setState(() => animationFrame++);
+    }));
   }
 
   void _refresh() { if (mounted) setState(() {}); }
@@ -46,10 +53,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     g.removeListener(_refresh);
     g.save();
     camera.dispose();
+    audio.dispose();
     super.dispose();
   }
 
-  void message(GameAction result) {
+  void message(GameAction result, {String cue = 'select'}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -59,7 +67,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     ));
     if (result.ok) {
       g.save();
-      if (g.soundOn) SystemSound.play(SystemSoundType.click);
+      audio.play(cue);
+    } else {
+      audio.play('fail');
     }
   }
 
@@ -71,17 +81,26 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     setState(() { selectedX = x; selectedY = y; });
     if (pendingBuild != null) {
       final result = g.build(pendingBuild!, x, y);
-      message(result);
+      message(result, cue: 'build');
       if (result.ok) setState(() => pendingBuild = null);
       return;
     }
     final b = g.buildingAt(x, y);
     if (b != null) {
+      audio.play('select');
       buildingSheet(b);
     } else {
       final result = g.walkTo(x, y);
-      if (!result.ok) message(result);
+      if (!result.ok) message(result); else audio.play('walk');
     }
+  }
+
+  void focusTile(int x, int y, {double zoom = 0.90}) {
+    final size = MediaQuery.sizeOf(context);
+    final p = VillagePainter.center(x, y);
+    camera.value = Matrix4.identity()
+      ..translate(size.width / 2 - p.dx * zoom, size.height * .52 - p.dy * zoom)
+      ..scale(zoom);
   }
 
   void sheet(String title, IconData icon, Widget Function(BuildContext) content, {double height = .77}) {
@@ -141,7 +160,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || cameraReady) return;
           const scale = .92;
-          final point = VillagePainter.center(5, 5);
+          final point = VillagePainter.center(g.px, g.py);
           camera.value = Matrix4.identity()
             ..translate(size.width / 2 - point.dx * scale, size.height * .54 - point.dy * scale)
             ..scale(scale);
@@ -153,12 +172,13 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           transformationController: camera,
           boundaryMargin: const EdgeInsets.all(350),
           constrained: false,
-          minScale: .45, maxScale: 2.3,
+          minScale: .24, maxScale: 3.6,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapUp: worldTap,
             child: CustomPaint(size: VillagePainter.sceneSize,
-              painter: VillagePainter(g, selectedX: selectedX, selectedY: selectedY, buildMode: pendingBuild != null)),
+              painter: VillagePainter(g, selectedX: selectedX, selectedY: selectedY,
+                buildMode: pendingBuild != null, animationFrame: animationFrame)),
           ),
         ))),
         Positioned(left: 0, right: 0, top: 0, child: SafeArea(bottom: false, child: Column(children: [
@@ -172,7 +192,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             child: Row(children: [
               const Icon(Icons.shield_rounded, size: 23, color: GameColors.gold),
               const SizedBox(width: 7),
-              const Expanded(child: Text('ممالك الحياة', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: GameColors.paleGold))),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('ممالك الحياة', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: GameColors.paleGold)),
+                Text(g.city.name, style: const TextStyle(fontSize: 10, color: GameColors.muted))])),
               InkWell(onTap: questsSheet, child: const Icon(Icons.assignment_rounded, color: GameColors.paleGold, size: 22)),
               const SizedBox(width: 12),
               Column(children: [Text('اليوم ${g.day} • ${g.season}', style: const TextStyle(fontSize: 11)),
@@ -184,7 +206,9 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         ]))),
         Positioned(top: 124, right: 8, child: SafeArea(child: playerStatus())),
         Positioned(left: 8, top: 128, child: SafeArea(child: Column(children: [
-          _round(Icons.map_rounded, 'مركز', () { final p = VillagePainter.center(g.px, g.py); camera.value = Matrix4.identity()..translate(size.width / 2 - p.dx * .95, size.height * .52 - p.dy * .95)..scale(.95); }),
+          _round(Icons.map_rounded, 'مركز', () => focusTile(g.px, g.py)),
+          const SizedBox(height: 8),
+          _round(Icons.travel_explore_rounded, 'سفر', citiesSheet),
           const SizedBox(height: 8),
           _round(Icons.assignment_rounded, 'مهام', questsSheet),
           const SizedBox(height: 8),
@@ -228,7 +252,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           const SizedBox(height: 18),
           const Text('✓ تعمل بدون إنترنت\n✓ حفظ تلقائي للتقدم\n✓ اقتصاد محلي وأسعار متغيرة\n✓ تحكم باللمس وتحريك الخريطة', textAlign: TextAlign.center, style: TextStyle(color: GameColors.green, height: 1.8)),
           const SizedBox(height: 22),
-          SizedBox(width: double.infinity, child: GButton(text: g.loadedFromDisk ? 'متابعة مملكتك' : 'ابدأ مغامرتك', icon: Icons.play_arrow_rounded, primary: true, onPressed: () => setState(() => showIntro = false))),
+          SizedBox(width: double.infinity, child: GButton(text: g.loadedFromDisk ? 'متابعة مملكتك' : 'ابدأ مغامرتك', icon: Icons.play_arrow_rounded, primary: true, onPressed: () { setState(() => showIntro = false); audio.play('arrival'); audio.startAmbience(); })),
         ])))))))),
       ]);
     }));
@@ -239,7 +263,14 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     decoration: BoxDecoration(color: const Color(0xdd3c2a1f), border: Border.all(color: GameColors.gold), borderRadius: BorderRadius.circular(17)),
     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, size: 21, color: GameColors.paleGold), Text(label, style: const TextStyle(fontSize: 9))]),
   ));
-  Widget _action(IconData icon, String title, String id) => Padding(padding: const EdgeInsets.symmetric(horizontal: 3), child: GButton(text: title, icon: icon, onPressed: () => message(g.act(id))));
+  Widget _action(IconData icon, String title, String id) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 3),
+    child: GButton(text: title, icon: icon,
+      onPressed: () => message(g.act(id), cue: {
+        'eat': 'eat', 'drink': 'drink', 'sleep': 'sleep',
+        'chop': 'chop', 'mine': 'mine', 'craft': 'craft', 'wash': 'drink'
+      }[id] ?? 'select')));
+
   Widget _tab(IconData icon, String title, VoidCallback action) => Expanded(child: InkWell(onTap: action, child: Container(
     margin: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
     decoration: BoxDecoration(color: const Color(0xff3c2c23), borderRadius: BorderRadius.circular(13), border: Border.all(color: const Color(0xff8b6d48))),
@@ -293,7 +324,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
         costView(g.buildingCost(b.type, upgradeLevel: b.level + 1)),
         const SizedBox(height: 12),
         GButton(text: 'ترقية إلى المستوى ${b.level + 1}', icon: Icons.arrow_upward_rounded, primary: true, onPressed: () {
-          message(g.upgrade(b));
+          message(g.upgrade(b), cue: 'upgrade');
           if (mounted) Navigator.of(context).pop();
         }),
       ],
@@ -310,7 +341,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
             TextButton(onPressed: () {
               Navigator.pop(ctx);
-              message(g.sellBuilding(b));
+              message(g.sellBuilding(b), cue: 'sell');
               if (mounted) Navigator.of(context).pop();
             }, child: const Text('تأكيد البيع')),
           ],
@@ -367,7 +398,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           const SizedBox(height: 7),
           SizedBox(width: double.infinity, child: GButton(text: buying ? 'تأكيد الشراء' : 'تأكيد البيع', icon: buying ? Icons.shopping_cart_checkout_rounded : Icons.price_check_rounded, primary: true, onPressed: () {
             final result = g.trade(active, quantity, buying: buying);
-            message(result);
+            message(result, cue: buying ? 'buy' : 'sell');
             redraw(() {});
           })),
         ]))),
@@ -408,11 +439,11 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       const SectionTitle('اعتنِ بالبطل', Icons.volunteer_activism_rounded),
       const SizedBox(height: 10),
       Wrap(spacing: 7, runSpacing: 8, children: [
-        GButton(text: 'تناول الطعام', icon: Icons.restaurant_rounded, primary: true, onPressed: () => message(g.act('eat'))),
-        GButton(text: 'اشرب الماء', icon: Icons.water_drop_rounded, onPressed: () => message(g.act('drink'))),
-        GButton(text: 'استرح 3 ساعات', icon: Icons.bedtime_rounded, onPressed: () => message(g.act('sleep'))),
-        GButton(text: 'اغتسل', icon: Icons.clean_hands_rounded, onPressed: () => message(g.act('wash'))),
-        GButton(text: 'اصنع أداة', icon: Icons.handyman_rounded, onPressed: () => message(g.act('craft'))),
+        GButton(text: 'تناول الطعام', icon: Icons.restaurant_rounded, primary: true, onPressed: () => message(g.act('eat'), cue: 'eat')),
+        GButton(text: 'اشرب الماء', icon: Icons.water_drop_rounded, onPressed: () => message(g.act('drink'), cue: 'drink')),
+        GButton(text: 'استرح 3 ساعات', icon: Icons.bedtime_rounded, onPressed: () => message(g.act('sleep'), cue: 'sleep')),
+        GButton(text: 'اغتسل', icon: Icons.clean_hands_rounded, onPressed: () => message(g.act('wash'), cue: 'drink')),
+        GButton(text: 'اصنع أداة', icon: Icons.handyman_rounded, onPressed: () => message(g.act('craft'), cue: 'craft')),
       ]),
       const SizedBox(height: 15),
       const Text('المؤشرات تنخفض مع مرور وقت اللعبة. الطعام والشراب والنوم ضروريون للحفاظ على صحة البطل.', style: TextStyle(fontSize: 11, color: GameColors.muted, height: 1.5)),
@@ -431,7 +462,7 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
           Text('التقدم: ${g.questProgress(q.key)} • المكافأة 220 ذهب +70 خبرة', style: const TextStyle(fontSize: 10, color: GameColors.muted)),
         ])),
         if (g.completedQuests.contains(q.key)) const Text('مُنجَز', style: TextStyle(color: GameColors.green))
-        else GButton(text: 'استلم', primary: g.questDone(q.key), onPressed: g.questDone(q.key) ? () => message(g.claim(q.key)) : null),
+        else GButton(text: 'استلم', primary: g.questDone(q.key), onPressed: g.questDone(q.key) ? () => message(g.claim(q.key), cue: 'quest') : null),
       ]))),
     ]), height: .72);
   }
@@ -445,8 +476,23 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       _stat('طاقة العمال', '${g.workersNeeded} / ${g.housing}', Icons.engineering_rounded),
       _stat('سعة المخازن', '${g.stored} / ${g.storageCapacity}', Icons.inventory_2_rounded),
       _stat('المباني المملوكة', '${g.buildings.length}', Icons.castle_rounded),
+      _stat('رصيد القروض', '${g.loanDebt} ذهب', Icons.account_balance_rounded),
+      _stat('رضا السكان', '${g.reputation} / 100', Icons.people_alt_rounded),
       const SizedBox(height: 15),
       if (!g.hasLabor) const Text('⚠ لا يوجد سكن كافٍ لكل العمال. بعض المصانع ستتوقف عن الإنتاج.', style: TextStyle(color: Colors.orangeAccent)),
+      const SizedBox(height: 13),
+      const SectionTitle('قراراتك الاقتصادية', Icons.tune_rounded),
+      const SizedBox(height: 8),
+      Wrap(spacing: 7, runSpacing: 7, children: [
+        GButton(text: 'ضرائب منخفضة', icon: Icons.favorite_outline, onPressed: () => message(g.chooseTaxes(0))),
+        GButton(text: 'ضرائب متوازنة', icon: Icons.balance_rounded, onPressed: () => message(g.chooseTaxes(1))),
+        GButton(text: 'ضرائب مرتفعة', icon: Icons.trending_up_rounded, onPressed: () => message(g.chooseTaxes(2))),
+        GButton(text: 'قرض 500', icon: Icons.account_balance, onPressed: () => message(g.borrow(500), cue: 'loan')),
+        GButton(text: 'سداد 500', icon: Icons.payments_rounded, onPressed: () => message(g.repay(500), cue: 'sell')),
+      ]),
+      const SizedBox(height: 7),
+      const Text('الضرائب المرتفعة تزيد العوائد لكنها تقلل رضا السكان. القرض بفائدة مركبة 2% لكل يوم في اللعبة.',
+          style: TextStyle(fontSize: 11, color: GameColors.muted, height: 1.6)),
       const SizedBox(height: 13),
       const SectionTitle('سجل العمليات', Icons.receipt_long_rounded),
       const SizedBox(height: 9),
@@ -464,6 +510,60 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
     trailing: Text(value, style: const TextStyle(fontWeight: FontWeight.w900, color: GameColors.paleGold)),
   );
 
+  void citiesSheet() {
+    sheet('مدن المملكة والسفر والتجارة', Icons.travel_explore_rounded, (_) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Text('اربح من اختلاف أسعار الموارد بين المدن، أو اخسر من تكاليف النقل ومخاطر القوافل. كل مدينة لها سوق مستقل يتغير مع مرور الأيام.',
+        style: TextStyle(color: GameColors.muted, height: 1.8, fontSize: 12)),
+      const SizedBox(height: 11),
+      _stat('موقعك الحالي', g.city.name, Icons.location_pin),
+      _stat('رصيدك بعد آخر تجارة', '${g.count(Resource.gold)} ذهب', Icons.monetization_on_rounded),
+      const SizedBox(height: 9),
+      for (final city in kingdomCities) Padding(padding: const EdgeInsets.only(bottom: 11), child:
+        GPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Icon(city.id == g.currentCityId ? Icons.home_rounded : Icons.location_city_rounded,
+              color: GameColors.gold, size: 28),
+            const SizedBox(width: 9),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(city.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+              Text(city.description, style: const TextStyle(fontSize: 11, color: GameColors.muted)),
+            ])),
+            if (city.id == g.currentCityId) const Icon(Icons.check_circle, color: GameColors.green),
+          ]),
+          const SizedBox(height: 8),
+          Text('خشب ${city.priceFactor[Resource.wood]}× • حجر ${city.priceFactor[Resource.stone]}× • قمح ${city.priceFactor[Resource.grain]}×',
+            style: const TextStyle(fontSize: 11, color: GameColors.paleGold)),
+          if (city.id != g.currentCityId) ...[
+            const SizedBox(height: 5),
+            Text('السفر: ${travelFare(g.city, city)} ذهب • ${travelHours(g.city, city)} ساعات • مخاطر ${(city.danger * 100).round()}%',
+              style: const TextStyle(fontSize: 11)),
+            const SizedBox(height: 7),
+            GButton(text: 'سافر إلى ${city.name}', icon: Icons.directions_walk_rounded,
+              primary: true, onPressed: () {
+                final action = g.travelTo(city.id);
+                message(action, cue: 'arrival');
+                if (action.ok) {
+                  Navigator.of(context).pop();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) focusTile(g.px, g.py);
+                  });
+                }
+              }),
+            const SizedBox(height: 5),
+            GButton(text: 'استثمر 500 ذهب في قافلة تجارية', icon: Icons.local_shipping_rounded,
+              onPressed: () => message(g.investCaravan(500, city.id), cue: 'caravan')),
+          ],
+        ]))),
+      if (g.caravanStake > 0) GPanel(child: Text(
+        'قافلة قيد التنفيذ: ${g.caravanStake} ذهب إلى ${cityById(g.caravanDestinationId).name} • موعد العودة يوم ${g.caravanMaturityDay}',
+        style: const TextStyle(color: GameColors.paleGold))),
+      const SizedBox(height: 8),
+      const Text('المدينة التي تزورها تغيّر أسعار السوق ومخزون التاجر وسيولته. مبانيك في مدينتك الأصلية تستمر في العمل أثناء السفر.',
+        style: TextStyle(fontSize: 11, color: GameColors.muted, height: 1.7)),
+    ]), height: .84);
+  }
+
   void mapSheet() {
     sheet('الخريطة ودليل اللعب', Icons.map_rounded, (_) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const Text('اسحب بإصبعك لتحريك الخريطة، واستخدم إصبعين للتقريب والإبعاد. المس أرضًا فارغة ليتحرك البطل إليها، أو المس مبنى لترقيته أو بيعه.', style: TextStyle(height: 1.8)),
@@ -472,12 +572,16 @@ class _GameScreenState extends State<GameScreen> with WidgetsBindingObserver {
       const SizedBox(height: 10),
       const Text('الحطّابون ← الخشب ← المنشرة ← الألواح ← الورشة والأبنية\nالمزارع ← القمح + مياه البئر ← المخبز ← الخبز\nالمحجر ← الحجر ← مصنع الطوب ← البناء\nالمنازل ← عمال وإيجارات يومية\nالسوق ← بيع وشراء محدودان بمخزون وسيولة التاجر', style: TextStyle(height: 1.9)),
       const SizedBox(height: 18),
+      const SectionTitle('مدن المملكة', Icons.travel_explore_rounded),
+      GButton(text: 'طرق التجارة والسفر بين المدن', icon: Icons.travel_explore_rounded,
+        onPressed: () { Navigator.of(context).pop(); citiesSheet(); }),
+      const SizedBox(height: 10),
       const SectionTitle('المرافق الموجودة', Icons.location_city_rounded),
       for (final type in BuildingType.values) ListTile(dense: true, leading: Icon(type.spec.icon, color: GameColors.gold),
         title: Text(type.spec.name), trailing: Text('${g.buildings.where((b) => b.type == type).length}')),
       const SizedBox(height: 16),
       const SectionTitle('إعدادات', Icons.settings_rounded),
-      SwitchListTile(title: const Text('صوت الضغطات'), value: g.soundOn, onChanged: (_) => g.toggleSound()),
+      SwitchListTile(title: const Text('المؤثرات الصوتية وأصوات الطبيعة'), value: g.soundOn, onChanged: (_) { g.toggleSound(); audio.setEnabled(g.soundOn); }),
       GButton(text: 'حفظ التقدم الآن', icon: Icons.save_rounded, primary: true, onPressed: () { g.save(); message(const GameAction(true, 'تم طلب حفظ تقدمك على الجهاز')); }),
       const SizedBox(height: 12),
       const Text('اللعبة تعمل بالكامل دون اتصال بالإنترنت. الحفظ محلي على الجهاز وقد يُحذف إذا حذفت بيانات التطبيق.', style: TextStyle(fontSize: 11, color: GameColors.muted)),
