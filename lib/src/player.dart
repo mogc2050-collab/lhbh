@@ -660,6 +660,7 @@ class _VideoDetailState extends State<VideoDetail> {
         Center(child:Padding(padding:const EdgeInsets.all(22),
           child:Text('تعذر تشغيل هذا الترميز أو الملف: $failure',
             textAlign:TextAlign.center))) :
+        video == null ? const Center(child:CircularProgressIndicator()) :
         Column(children:[
           Expanded(child:LayoutBuilder(builder:(ctx,limits)=>
             GestureDetector(
@@ -667,12 +668,12 @@ class _VideoDetailState extends State<VideoDetail> {
               onDoubleTapDown:(e){
                 if(locked)return;
                 final jump=e.localPosition.dx<limits.maxWidth/2?-10:10;
-                final target=video!.value.position+Duration(seconds:jump);
+                final target=video.value.position+Duration(seconds:jump);
                 video.seekTo(target<Duration.zero?Duration.zero:target);
               },
               child:Stack(children:[
                 Center(child:AspectRatio(
-                  aspectRatio:video!.value.aspectRatio,
+                  aspectRatio:video.value.aspectRatio,
                   child:VideoPlayer(video))),
                 if(brightness<.99)IgnorePointer(child:Container(
                   color:Colors.black.withValues(alpha:(1-brightness)*.65))),
