@@ -269,12 +269,21 @@ class KingdomEngine extends ChangeNotifier {
   void _need(String key,double change) {
     needs[key]=(needs[key]!+change).clamp(0.0,100.0).toDouble();
   }
+  /// Advances the world in chronological order. Production and daily bills
+  /// must interleave, otherwise fast travel creates goods before inputs arrive.
   void passMinutes(int minutes) {
-    if(minutes<1) return;
-    final oldDay=day;
-    clock+=minutes;
-    while(_lastHour<clock~/60) { _lastHour++;_hourly(); }
-    for(var d=oldDay;d<day;d++) { _daily(); }
+    if (minutes < 1) return;
+    final end = clock + minutes;
+    while (clock < end) {
+      final nextHour = (clock ~/ 60 + 1) * 60;
+      final previousDay = day;
+      clock = min(end, nextHour);
+      if (clock == nextHour) {
+        _lastHour = clock ~/ 60;
+        _hourly();
+        if (day != previousDay) _daily();
+      }
+    }
     _notice();
   }
   void tick() {
@@ -320,6 +329,9 @@ class KingdomEngine extends ChangeNotifier {
         _take({Good.medicine:1});_need('الصحة',38);
         return _success('استعملت الدواء');
       case 'work':
+        if (needs['الطاقة']! < 18 || needs['الصحة']! < 15) {
+          return _fail('لا يمكنك العمل بهذه الحالة؛ استرح أو تعالج أولًا');
+        }
         _need('الطاقة',-12);_need('الجوع',-6);
         stock[Good.gold]=gold+50;
         passMinutes(90);
@@ -338,7 +350,7 @@ class KingdomEngine extends ChangeNotifier {
     // Owning a local market really matters: better deals in this city.
     final localMarket=sites.any((s)=>s.owned&&s.kind==Facility.market&&
       (s.x-city.x).abs()+(s.y-city.y).abs()<=16);
-    final marketBonus=localMarket?(buying?.94:1.06):1.0;
+    final marketBonus = localMarket ? (buying ? 0.94 : 1.06) : 1.0;
     return max(1,(g.base*factor*scarcity*seasonFactor*spread*
       marketBonus).round());
   }
@@ -370,7 +382,11 @@ class KingdomEngine extends ChangeNotifier {
   int travelCost(Town to)=>travelHours(to)*16*
       (sites.any((s)=>s.owned&&s.kind==Facility.stable)?3:4)~/4;
   GameResult travel(String destination) {
+    if (!towns.any((t) => t.id == destination)) {
+      return _fail('المدينة المطلوبة غير موجودة');
+    }
     final to=townById(destination);
+    if (needs['الطاقة']! < 12) return _fail('البطل مرهق ويحتاج للنوم قبل السفر');
     if(to.id==cityId) return _fail('أنت في هذه المدينة بالفعل');
     final hours=travelHours(to),cost=travelCost(to);
     final rations=max(1,(hours/3).ceil());
@@ -410,6 +426,7 @@ class KingdomEngine extends ChangeNotifier {
     return _success('أصبحت الضرائب ${['منخفضة','متوازنة','مرتفعة'][value]}');
   }
   GameResult caravan(String destination,int investment) {
+    if (!towns.any((t) => t.id == destination)) return _fail('الوجهة غير موجودة');
     if(caravanAmount>0) return _fail('لديك قافلة قيد السفر بالفعل');
     if(destination==cityId||investment<100||investment>2000||
         gold<investment) return _fail('الاستثمار أو الوجهة غير صالحين');
@@ -472,6 +489,7 @@ class KingdomEngine extends ChangeNotifier {
     'reputation':reputation,'taxes':taxes,'debt':debt,
     'caravanAmount':caravanAmount,'caravanReady':caravanReady,
     'caravanCity':caravanCity,'paused':paused,'sound':sound,
+    'dayIncome':dayIncome,'dayExpenses':dayExpenses,
     'stock':{for(final g in Good.values) g.name:amount(g)},
     'needs':needs,'sites':sites.map((s)=>s.toJson()).toList(),
     'cityStock':{for(final e in cityStock.entries) e.key:{
@@ -491,6 +509,8 @@ class KingdomEngine extends ChangeNotifier {
     reputation=number('reputation',reputation).clamp(0,100).toInt();
     taxes=number('taxes',taxes).clamp(0,2).toInt();
     debt=max(0,number('debt',debt));
+    dayIncome=max(0,number('dayIncome',0));
+    dayExpenses=max(0,number('dayExpenses',0));
     caravanAmount=max(0,number('caravanAmount',0));
     caravanReady=max(0,number('caravanReady',0));
     caravanCity=d['caravanCity'] as String? ?? '';
