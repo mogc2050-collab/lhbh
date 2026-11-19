@@ -1,88 +1,118 @@
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 @immutable
 class PhoneMedia {
-  const PhoneMedia({
-    required this.id,required this.uri,required this.name,
+  const PhoneMedia({required this.id,required this.uri,required this.name,
     required this.kind,required this.size,required this.duration,
     required this.date,required this.mime,
-  });
-  final int id;
-  final String uri;
-  final String name;
-  final String kind;
-  final int size;
-  final int duration;
-  final int date;
-  final String mime;
-
+    this.artist='',this.album='',this.albumId=0,this.folder=''});
+  final int id,size,duration,date,albumId;
+  final String uri,name,kind,mime,artist,album,folder;
   bool get audio=>kind=='audio';
   bool get video=>kind=='video';
-
-  factory PhoneMedia.fromJson(Map<String,dynamic> row)=>PhoneMedia(
-    id:(row['id'] as num?)?.toInt()??0,
-    uri:row['uri'] as String? ?? '',
-    name:row['name'] as String? ?? 'ملف بدون اسم',
-    kind:row['kind'] as String? ?? 'audio',
-    size:(row['size'] as num?)?.toInt()??0,
-    duration:(row['duration'] as num?)?.toInt()??0,
-    date:(row['date'] as num?)?.toInt()??0,
-    mime:row['mime'] as String? ?? '',
-  );
+  bool get image=>kind=='image';
+  factory PhoneMedia.fromJson(Map<String,dynamic> j)=>PhoneMedia(
+    id:(j['id'] as num?)?.toInt()??0,
+    uri:j['uri'] as String? ?? '',
+    name:j['name'] as String? ?? 'ملف',
+    kind:j['kind'] as String? ?? 'audio',
+    size:(j['size'] as num?)?.toInt()??0,
+    duration:(j['duration'] as num?)?.toInt()??0,
+    date:(j['date'] as num?)?.toInt()??0,
+    mime:j['mime'] as String? ?? '',
+    artist:j['artist'] as String? ?? '',
+    album:j['album'] as String? ?? '',
+    albumId:(j['albumId'] as num?)?.toInt()??0,
+    folder:j['folder'] as String? ?? '');
 }
 
 class PhoneLibrary extends ChangeNotifier {
-  static const _channel=MethodChannel('ibetoo.media/device');
-  final List<PhoneMedia> audio=[];
-  final List<PhoneMedia> videos=[];
-  Map<String,bool> permissions={'audio':false,'video':false,'notifications':false};
+  static const channel=MethodChannel('ibetoo.media/device');
+  final List<PhoneMedia> audio=[],videos=[],images=[];
+  final Map<String,Uint8List> thumbs={};
+  Map<String,bool> permissions={'audio':false,'video':false,
+    'image':false,'notifications':false};
   bool loading=false;
   String? error;
-
   bool get audioGranted=>permissions['audio']==true;
   bool get videoGranted=>permissions['video']==true;
+  bool get imageGranted=>permissions['image']==true;
   bool get notificationsGranted=>permissions['notifications']==true;
-
-  Future<void> refresh({bool askPermissions=false}) async {
-    if(loading) return;
-    loading=true;
-    error=null;
-    notifyListeners();
-    try {
-      if(askPermissions){
-        final response=await _channel.invokeMapMethod<String,bool>('requestPermissions');
-        if(response!=null)permissions=Map<String,bool>.from(response);
-      }else{
-        final response=await _channel.invokeMapMethod<String,bool>('permissions');
-        if(response!=null)permissions=Map<String,bool>.from(response);
-      }
-      if(audioGranted){
-        final list=await _channel.invokeMethod<List<dynamic>>('scan',{'kind':'audio'});
-        audio..clear()..addAll((list??[]).whereType<Map>().map(
-          (v)=>PhoneMedia.fromJson(Map<String,dynamic>.from(v))));
-      }else{audio.clear();}
-      if(videoGranted){
-        final list=await _channel.invokeMethod<List<dynamic>>('scan',{'kind':'video'});
-        videos..clear()..addAll((list??[]).whereType<Map>().map(
-          (v)=>PhoneMedia.fromJson(Map<String,dynamic>.from(v))));
-      }else{videos.clear();}
-    }on PlatformException catch(e){
-      error='تعذّر قراءة وسائط الهاتف: ${e.message ?? e.code}';
-    }catch(e){
-      error='تعذّر فهرسة ملفات الهاتف: $e';
-    }finally{
-      loading=false;
-      notifyListeners();
+  List<PhoneMedia> get all=>[...audio,...videos,...images];
+  List<PhoneMedia> get playable=>[...audio,...videos];
+  Map<String,List<PhoneMedia>> get folders {
+    final out=<String,List<PhoneMedia>>{};
+    for(final e in all){
+      out.putIfAbsent(e.folder.isEmpty?'بدون مجلد':e.folder,()=>[]).add(e);
     }
+    return out;
   }
-
-  /// For sources that require a private file path for background playback.
-  /// One track at a time, not bulk-copying the user's whole phone library.
-  static Future<String> playableAudio(String uri) async {
-    if(!uri.startsWith('content://')) return uri;
-    final file=await _channel.invokeMethod<String>('audioCache',{'uri':uri});
-    if(file==null||file.isEmpty)throw StateError('لا يمكن قراءة الملف');
+  Map<String,List<PhoneMedia>> get artists {
+    final out=<String,List<PhoneMedia>>{};
+    for(final e in audio){
+      out.putIfAbsent(e.artist.isEmpty?'فنان غير معروف':e.artist,()=>[]).add(e);
+    }
+    return out;
+  }
+  Map<String,List<PhoneMedia>> get albums {
+    final out=<String,List<PhoneMedia>>{};
+    for(final e in audio){
+      out.putIfAbsent(e.album.isEmpty?'ألبوم غير معروف':e.album,()=>[]).add(e);
+    }
+    return out;
+  }
+  Future<void> refresh({bool askPermissions=false}) async{
+    if(loading)return;
+    loading=true;error=null;notifyListeners();
+    try{
+      final state=await channel.invokeMapMethod<String,bool>(
+        askPermissions?'requestPermissions':'permissions');
+      if(state!=null)permissions=Map<String,bool>.from(state);
+      for(final entry in <(String,List<PhoneMedia>,bool)>[
+        ('audio',audio,audioGranted),('video',videos,videoGranted),
+        ('image',images,imageGranted),
+      ]){
+        entry.$2.clear();
+        if(!entry.$3)continue;
+        final rows=await channel.invokeMethod<List<dynamic>>(
+          'scan',{'kind':entry.$1});
+        entry.$2.addAll((rows??[]).whereType<Map>().map((x)=>
+          PhoneMedia.fromJson(Map<String,dynamic>.from(x))));
+      }
+    }on PlatformException catch(e){error=e.message??e.code;}
+    catch(e){error='فشل فهرسة الوسائط: $e';}
+    finally{loading=false;notifyListeners();}
+  }
+  Future<Uint8List?> artwork(String uri) async {
+    if(thumbs.containsKey(uri))return thumbs[uri];
+    try{
+      final result=await channel.invokeMethod<Uint8List>(
+        'thumbnail',{'uri':uri});
+      if(result!=null&&result.isNotEmpty){
+        if(thumbs.length>120)thumbs.remove(thumbs.keys.first);
+        thumbs[uri]=result;
+        notifyListeners();
+        return result;
+      }
+    }catch(_){}
+    return null;
+  }
+  Future<List<List<String>>> findDuplicates() async{
+    final data=await channel.invokeMethod<List<dynamic>>('duplicates');
+    return (data??[]).whereType<Map>().map((e)=>
+      (e['uris'] as List? ?? []).whereType<String>().toList()
+    ).where((e)=>e.length>1).toList();
+  }
+  PhoneMedia? byUri(String uri){
+    for(final m in all){if(m.uri==uri)return m;}
+    return null;
+  }
+  static Future<String> playableAudio(String uri) async{
+    if(!uri.startsWith('content://'))return uri;
+    final file=await channel.invokeMethod<String>('audioCache',{'uri':uri});
+    if(file==null||file.isEmpty)throw StateError('الملف غير متاح');
     return file;
   }
 }
