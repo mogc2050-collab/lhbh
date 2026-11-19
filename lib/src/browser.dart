@@ -315,8 +315,12 @@ class _BrowserScreenState extends State<BrowserScreen>{
   }
 
   void _menu(){
-    showModalBottomSheet<void>(context:context,builder:(ctx)=>SafeArea(
-      child:Column(mainAxisSize:MainAxisSize.min,children:[
+    showModalBottomSheet<void>(
+      context:context,isScrollControlled:true,useSafeArea:true,
+      builder:(ctx)=>FractionallySizedBox(heightFactor:.84,
+        child:SafeArea(child:ListView(
+          padding:const EdgeInsets.fromLTRB(8,12,8,24),
+          children:[
         ListTile(leading:const Icon(Icons.add),
           title:const Text('تبويب جديد'),onTap:(){
             Navigator.pop(ctx);_newTab(null);}),
@@ -345,7 +349,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
           value:widget.library.enhancedDark,
           onChanged:(v){widget.library.setEnhancedDark(v);
             Navigator.pop(ctx);tab.controller.reload();}),
-      ]),
+      ])),
     ));
   }
 
