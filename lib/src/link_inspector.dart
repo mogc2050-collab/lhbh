@@ -188,7 +188,7 @@ class _SmartLinkScreenState extends State<SmartLinkScreen> {
     try{
       final record=await widget.library.addDownload(
         variant.url.toString(),
-        filename:MediaUtils.fileTitle(variant.url));
+        filename:info?.title??MediaUtils.fileTitle(variant.url));
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content:Text('التنزيل بدأ في الخلفية: ${record.title}')));
     }catch(e){
