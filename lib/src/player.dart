@@ -345,7 +345,7 @@ class AudioDetail extends StatelessWidget {
                   ]),
               ]));
           }),
-      ))));
+      )));
   }
 
 
