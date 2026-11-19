@@ -66,7 +66,7 @@ jobs:
       - name: Test retry policy offline (429, 503, compilation, signing)
         run: bash scripts/test_build_apk_retry.sh
 
-      - name: Configure background downloads, audio, PiP, app icon and signing
+      - name: Configure offline media indexing, biometric access, browser and signing
         run: python3 scripts/customize_android.py
 
       # Flutter creates android/ during this workflow, so install Gradle
@@ -79,13 +79,19 @@ jobs:
           native=android/app/src/main/kotlin/com/ibetoo/ibetoo_media
           test -s "$native/MainActivity.kt"
           test -s "$native/DeviceMediaBridge.kt"
+          test ! -e lib/src/downloads_screen.dart
+          test ! -e lib/src/link_inspector.dart
+          ! grep -q 'android.app.DownloadManager' "$native/MainActivity.kt"
+          ! grep -q 'DownloadBridge' lib/src/*.dart
           grep -q 'READ_MEDIA_AUDIO' "$manifest"
           grep -q 'READ_MEDIA_VIDEO' "$manifest"
           grep -q 'POST_NOTIFICATIONS' "$manifest"
+          grep -q 'READ_MEDIA_IMAGES' "$manifest"
+          grep -q 'USE_BIOMETRIC' "$manifest"
           grep -q 'DeviceMediaBridge(this' "$native/MainActivity.kt"
           grep -q 'MediaStore.Audio.Media' "$native/DeviceMediaBridge.kt"
           grep -q 'MediaStore.Video.Media' "$native/DeviceMediaBridge.kt"
-          echo 'MediaStore catalog, playback service, and permission bridge generated.'
+          echo 'Browser, offline MediaStore library, biometric security and playback service generated; downloader absent.'
 
       - name: Restore and persist Gradle wrapper and Maven dependencies
         uses: gradle/actions/setup-gradle@v4
@@ -179,7 +185,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo '## iBetoo Media - تنزيل مباشر'
+            echo '## iBetoo Media - ملف التثبيت'
             echo ''
             echo 'من تشغيل الـActions الحالي، افتح Artifacts وحمّل **iBetoo-Media.apk** بدون ZIP.'
             echo 'إذا فشل التحليل أو الاختبار، لا تُعتبر النسخة جاهزة للتثبيت.'
