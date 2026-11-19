@@ -22,6 +22,7 @@ class _BrowserTab {
   String url,title='';
   bool loading=false,private=false;
   int progress=0;
+  bool canBack=false,canForward=false;
   bool get home=>url.isEmpty||url=='about:blank';
 }
 class _BrowserScreenState extends State<BrowserScreen>{
@@ -87,10 +88,15 @@ class _BrowserScreenState extends State<BrowserScreen>{
           address.text=url;setState(()=>error=null);
         }
       },
-      onProgress:(v){created.progress=v;if(mounted)setState((){});},
+      onProgress:(v){
+        created.progress=v;
+        if(mounted&&identical(tab,created))setState((){});
+      },
       onPageFinished:(url) async{
         created.url=url;created.loading=false;
         created.title=await controller.getTitle()??Uri.tryParse(url)?.host??url;
+        created.canBack=await controller.canGoBack();
+        created.canForward=await controller.canGoForward();
         if(!created.private)widget.library.visited(url);
         if(mounted&&identical(tab,created)){
           address.text=url;
@@ -135,6 +141,28 @@ class _BrowserScreenState extends State<BrowserScreen>{
     if(selected>=tabs.length)selected=tabs.length-1;
     if(mounted)setState(()=>address.text=tab.home?'':tab.url);
   }
+  Future<void> _back() async {
+    if(tab.home)return;
+    if(await tab.controller.canGoBack()){
+      await tab.controller.goBack();
+    }else{
+      _newTab(null);
+    }
+  }
+  Future<void> _forward() async {
+    if(!tab.home&&await tab.controller.canGoForward()){
+      await tab.controller.goForward();
+    }
+  }
+  void _refresh(){
+    if(tab.home)return;
+    if(tab.loading){
+      tab.controller.runJavaScript('window.stop()');
+    }else{
+      tab.controller.reload();
+    }
+  }
+
   Future<void> _injectDark(WebViewController web) async {
     try{
       await web.runJavaScript(r'''(function(){
@@ -401,12 +429,9 @@ class _BrowserScreenState extends State<BrowserScreen>{
     return Scaffold(
       body:SafeArea(child:Column(children:[
         if(!current.home)Row(children:[
-          IconButton(icon:const Icon(Icons.arrow_back_rounded),
-            onPressed:()async{
-              if(await current.controller.canGoBack()){
-                await current.controller.goBack();
-              }else{_newTab(null);}
-            }),
+          IconButton(
+            tooltip:'رجوع',icon:const Icon(Icons.arrow_back_rounded),
+            onPressed:_back),
           Expanded(child:Text(current.title.isNotEmpty?
             current.title:current.url,maxLines:1,
             overflow:TextOverflow.ellipsis,
@@ -429,7 +454,10 @@ class _BrowserScreenState extends State<BrowserScreen>{
         Expanded(child:Stack(children:[
           IndexedStack(index:selected,children:[
             for(final item in tabs)
-              item.home? _homePage():WebViewWidget(controller:item.controller),
+              KeyedSubtree(
+                key:ObjectKey(item),
+                child:item.home?_homePage():
+                  WebViewWidget(controller:item.controller)),
           ]),
           if(error!=null&& !current.home)Positioned(top:12,left:12,right:12,
             child:Card(child:ListTile(
@@ -477,12 +505,16 @@ class _BrowserScreenState extends State<BrowserScreen>{
                     const Icon(Icons.search,size:18),
                   ]),
                 ))),
-              IconButton(icon:Icon(current.loading?
-                Icons.close:Icons.refresh),onPressed:(){
-                if(current.home)return;
-                if(current.loading){current.controller.runJavaScript('window.stop()');}
-                else{current.controller.reload();}
-              }),
+              IconButton(
+                tooltip:'السابق',icon:const Icon(Icons.chevron_right_rounded),
+                onPressed:current.home?null:_back),
+              IconButton(
+                tooltip:'التالي',icon:const Icon(Icons.chevron_left_rounded),
+                onPressed:current.home?null:_forward),
+              IconButton(
+                tooltip:current.loading?'إيقاف':'تحديث',
+                icon:Icon(current.loading?Icons.close:Icons.refresh),
+                onPressed:current.home?null:_refresh),
               InkWell(onTap:_showTabs,
                 child:Container(width:30,height:30,
                   alignment:Alignment.center,
