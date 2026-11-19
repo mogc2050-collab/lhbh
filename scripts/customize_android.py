@@ -18,13 +18,16 @@ perms = [
  "android.permission.WAKE_LOCK",
  "android.permission.FOREGROUND_SERVICE",
  "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+ "android.permission.READ_MEDIA_AUDIO",
+ "android.permission.READ_MEDIA_VIDEO",
+ "android.permission.POST_NOTIFICATIONS",
 ]
 inject = "\n".join(
  f'    <uses-permission android:name="{p}" />' for p in perms
 )
 if "<application" not in text:
     raise SystemExit("No Android application tag found.")
-text = text.replace("<application", inject + "\n    <application", 1)
+text = text.replace("<application", inject + '\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>\n    <application', 1)
 text, count = re.subn(
     r'(<application\b[^>]*\bandroid:label=")[^"]*(")',
     r'\g<1>iBetoo Media\2', text, count=1, flags=re.DOTALL)
@@ -113,12 +116,14 @@ import java.net.URLConnection
 
 class MainActivity: AudioServiceActivity() {
     private val channel = "ibetoo.media/downloads"
+    private lateinit var deviceMedia: DeviceMediaBridge
 
     private val manager: DownloadManager
         get() = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        deviceMedia = DeviceMediaBridge(this,flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)
             .setMethodCallHandler { call, result ->
                 try {
@@ -171,6 +176,13 @@ class MainActivity: AudioServiceActivity() {
                     result.error("MEDIA_NATIVE", e.message ?: e.javaClass.simpleName, null)
                 }
             }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+        if (::deviceMedia.isInitialized) deviceMedia.handlePermissionResult(requestCode)
     }
 
     private fun mime(filename: String): String {
@@ -295,6 +307,10 @@ class MainActivity: AudioServiceActivity() {
     }
 }
 ''', "utf-8")
+native_bridge = root / "native/DeviceMediaBridge.kt"
+if not native_bridge.is_file():
+    raise SystemExit("Missing native/DeviceMediaBridge.kt")
+(main.parent / "DeviceMediaBridge.kt").write_text(native_bridge.read_text("utf-8"), "utf-8")
 
 kts = root / "android/app/build.gradle.kts"
 groovy = root / "android/app/build.gradle"
