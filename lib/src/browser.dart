@@ -5,6 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'library.dart';
 import 'media_utils.dart';
+import 'platform_bridge.dart';
 import 'theme.dart';
 
 /// Quetta-style mobile-first chrome, powered by Android WebView.
@@ -314,6 +315,38 @@ class _BrowserScreenState extends State<BrowserScreen>{
       ])));
   }
 
+  Future<void> _downloadDirectUrl() async {
+    final input=TextEditingController(text:tab.home?'':tab.url);
+    final url=await showDialog<String>(
+      context:context,
+      builder:(ctx)=>AlertDialog(
+        title:const Text('تنزيل ملف مباشر'),
+        content:TextField(
+          controller:input,
+          keyboardType:TextInputType.url,
+          textDirection:TextDirection.ltr,
+          decoration:const InputDecoration(
+            hintText:'https://example.com/file.pdf')),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(ctx),
+            child:const Text('إلغاء')),
+          FilledButton(onPressed:()=>Navigator.pop(ctx,input.text.trim()),
+            child:const Text('تنزيل')),
+        ]),
+    );
+    input.dispose();
+    if(url==null||url.isEmpty)return;
+    final uri=Uri.tryParse(url);
+    if(uri==null||uri.scheme!='https'||uri.host.isEmpty){
+      _notice('أدخل رابط HTTPS مباشر لملف مسموح بتنزيله');
+      return;
+    }
+    try{
+      final id=await PlatformMediaBridge.downloadUrl(url);
+      _notice(id>=0?'بدأ التنزيل في مجلد Downloads':'تعذر بدء التنزيل');
+    }catch(e){_notice('تعذر تنزيل الرابط: $e');}
+  }
+
   void _menu(){
     showModalBottomSheet<void>(
       context:context,isScrollControlled:true,useSafeArea:true,
@@ -336,6 +369,16 @@ class _BrowserScreenState extends State<BrowserScreen>{
         ListTile(leading:const Icon(Icons.chrome_reader_mode_outlined),
           title:Text(reader?'إغلاق وضع القراءة':'وضع القراءة'),
           onTap:(){Navigator.pop(ctx);_reader();}),
+        ListTile(leading:const Icon(Icons.download_rounded),
+          title:const Text('تنزيل ملف من رابط مباشر'),
+          onTap:(){Navigator.pop(ctx);_downloadDirectUrl();}),
+        ListTile(leading:const Icon(Icons.folder_open_rounded),
+          title:const Text('ملفات التنزيل'),
+          onTap:()async{
+            Navigator.pop(ctx);
+            try{await PlatformMediaBridge.openDownloads();}
+            catch(e){_notice('تعذر فتح التنزيلات: $e');}
+          }),
         ListTile(leading:const Icon(Icons.open_in_browser),
           title:const Text('فتح بمتصفح الجهاز'),
           onTap:(){Navigator.pop(ctx);_openExternal();}),
