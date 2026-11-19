@@ -78,6 +78,9 @@ jobs:
       - name: Install Flutter dependencies
         run: flutter pub get
 
+      - name: Analyze Dart for compile errors
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
       - name: Run project tests
         run: flutter test
 
