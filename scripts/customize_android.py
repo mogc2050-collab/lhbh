@@ -3,7 +3,10 @@ The Flutter Android project is recreated by CI, so this script is idempotent
 and supports system-managed HTTPS file downloads.
 """
 from pathlib import Path
+import os
 import re
+import shutil
+import urllib.request
 
 ROOT=Path(__file__).resolve().parent.parent
 manifest=ROOT/"android/app/src/main/AndroidManifest.xml"
@@ -91,7 +94,7 @@ xml.mkdir(parents=True,exist_ok=True)
 
 android_src=ROOT/"android/app/src/main/kotlin/com/ibetoo/ibetoo_media"
 android_src.mkdir(parents=True,exist_ok=True)
-for name in ("MainActivity.kt","DeviceMediaBridge.kt"):
+for name in ("MainActivity.kt","DeviceMediaBridge.kt","GeckoEngine.kt","GeckoBridge.kt","GeckoPrompts.kt"):
     source=ROOT/"native"/name
     if not source.exists():raise SystemExit(f"Missing native/{name}")
     (android_src/name).write_text(source.read_text("utf-8"),"utf-8")
@@ -133,4 +136,54 @@ elif groovy.exists():
     if count!=1:raise SystemExit("Release signing assignment not found")
     groovy.write_text(gradle,"utf-8")
 else:raise SystemExit("Android Gradle app template unavailable")
-print("iBetoo Media: browser, offline library, playback, biometric lock, and Android downloads.")
+
+# ---- GeckoView engine (Firefox engine, not Android WebView) ----
+ext_src=ROOT/"native"/"web_extensions"
+ext_dst=ROOT/"android/app/src/main/assets/web_extensions"
+if not (ext_src/"aflaak-core"/"manifest.json").exists():
+    raise SystemExit("Missing native/web_extensions/aflaak-core")
+shutil.copytree(ext_src,ext_dst,dirs_exist_ok=True)
+
+def gecko_version():
+    forced=os.environ.get("GECKOVIEW_VERSION","").strip()
+    if forced:return forced
+    url="https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/maven-metadata.xml"
+    with urllib.request.urlopen(url,timeout=60) as r:
+        xml=r.read().decode("utf-8")
+    m=re.search(r"<release>([^<]+)</release>",xml) or re.search(r"<latest>([^<]+)</latest>",xml)
+    if not m:raise SystemExit("Cannot resolve latest GeckoView release")
+    return m.group(1).strip()
+
+GECKO=gecko_version()
+print("GeckoView version:",GECKO)
+app_gradle=kts if kts.exists() else groovy
+g=app_gradle.read_text("utf-8")
+g=re.sub(r"JavaVersion\.VERSION_(?:1[01]|8)","JavaVersion.VERSION_17",g)
+g=re.sub(r'jvmTarget\s*=\s*"(?:1[01]|8)"','jvmTarget = "17"',g)
+g=re.sub(r"minSdk(Version)?\s*=?\s*flutter\.minSdkVersion",
+         "minSdk = 26" if kts.exists() else "minSdkVersion 26",g,count=1)
+if kts.exists():
+    g+=f'''
+
+repositories {{
+    maven {{ url = uri("https://maven.mozilla.org/maven2/") }}
+}}
+
+dependencies {{
+    implementation("org.mozilla.geckoview:geckoview:{GECKO}")
+}}
+'''
+else:
+    g+=f'''
+
+repositories {{
+    maven {{ url "https://maven.mozilla.org/maven2/" }}
+}}
+
+dependencies {{
+    implementation "org.mozilla.geckoview:geckoview:{GECKO}"
+}}
+'''
+app_gradle.write_text(g,"utf-8")
+
+print("iBetoo Media: GeckoView browser, offline library, playback, biometric lock, and Android downloads.")

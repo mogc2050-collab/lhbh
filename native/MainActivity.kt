@@ -14,13 +14,15 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
-/** Browser + offline library: there is deliberately NO DownloadManager here. */
+/** Browser (GeckoView) + offline media library. */
 class MainActivity: AudioServiceFragmentActivity() {
     private lateinit var deviceMedia:DeviceMediaBridge
+    private var gecko:GeckoBridge?=null
 
     override fun configureFlutterEngine(flutterEngine:FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         deviceMedia=DeviceMediaBridge(this,flutterEngine.dartExecutor.binaryMessenger)
+        gecko=GeckoBridge(this,flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger,
             "ibetoo.media/platform").setMethodCallHandler{call,result->
             try {

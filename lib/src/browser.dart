@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'engine/browser_engine.dart';
 import 'library.dart';
 import 'media_utils.dart';
 import 'platform_bridge.dart';
 import 'theme.dart';
 
-/// Quetta-style mobile-first chrome, powered by Android WebView.
-/// WebView does not offer Chrome extension APIs or complete request blocking.
+/// Quetta-style mobile-first chrome, powered by GeckoView (the Firefox
+/// engine) through [BrowserEngine]. Supports Firefox WebExtensions.
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({
     super.key,
@@ -28,12 +27,12 @@ class BrowserScreen extends StatefulWidget {
 }
 
 class _BrowserTab {
-  _BrowserTab(this.controller, {this.private = false});
-  final WebViewController controller;
+  _BrowserTab(this.engine, {this.private = false});
+  final EngineTab engine;
   String url = '', title = '';
   bool loading = false, private = false;
   int progress = 0;
-  bool canBack = false, canForward = false;
+  bool canBack = false, canForward = false, desktop = false;
   bool get home => url.isEmpty || url == 'about:blank';
 }
 
@@ -41,7 +40,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final address = TextEditingController();
   final List<_BrowserTab> tabs = [];
   int selected = 0;
-  bool reader = false;
+  bool reader = false, fullscreen = false;
   String? error;
   _BrowserTab get tab => tabs[selected];
   static const home = 'about:blank';
@@ -54,6 +53,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   @override
   void dispose() {
+    BrowserEngine.instance.setSecureWindow(false);
+    for (final t in tabs) {
+      t.engine.close();
+    }
     address.dispose();
     super.dispose();
   }
@@ -75,76 +78,100 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   void _newTab(String? initial, {bool private = false}) {
-    late _BrowserTab created;
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.white);
-    if (controller.platform is AndroidWebViewController) {
-      (controller.platform as AndroidWebViewController)
-          .setMediaPlaybackRequiresUserGesture(false);
-    }
-    created = _BrowserTab(controller, private: private);
-    controller.setNavigationDelegate(
-      NavigationDelegate(
-        onNavigationRequest: (request) {
-          final parsed = Uri.tryParse(request.url);
-          if (parsed == null) return NavigationDecision.prevent;
-          if (parsed.scheme == 'http') {
-            // Upgrade insecure top-level navigation; do not claim all HTTPS
-            // failures can be automatically repaired.
-            controller.loadRequest(parsed.replace(scheme: 'https'));
-            return NavigationDecision.prevent;
-          }
-          if (parsed.scheme != 'https' && parsed.scheme != 'about') {
-            return NavigationDecision.prevent;
-          }
-          return NavigationDecision.navigate;
-        },
-        onPageStarted: (url) {
-          created.url = url;
-          created.loading = true;
-          if (mounted && identical(tab, created)) {
-            address.text = url;
-            setState(() => error = null);
-          }
-        },
-        onProgress: (v) {
-          created.progress = v;
-          if (mounted && identical(tab, created)) setState(() {});
-        },
-        onPageFinished: (url) async {
-          created.url = url;
+    final engine = BrowserEngine.instance.createTab(private: private);
+    final created = _BrowserTab(engine, private: private);
+    final l = engine.listener;
+    l.onPageStarted = (url) {
+      created.url = url;
+      created.loading = true;
+      if (mounted && identical(tab, created)) {
+        address.text = url;
+        setState(() => error = null);
+      }
+    };
+    l.onProgress = (v) {
+      created.progress = v;
+      if (mounted && identical(tab, created)) setState(() {});
+    };
+    l.onLocation = (url) {
+      created.url = url;
+      if (mounted && identical(tab, created)) {
+        address.text = url;
+        setState(() {});
+      }
+    };
+    l.onTitle = (title) {
+      created.title = title;
+      if (mounted && tabs.contains(created)) setState(() {});
+    };
+    l.onHistory = (back, forward) {
+      created.canBack = back;
+      created.canForward = forward;
+      if (mounted && identical(tab, created)) setState(() {});
+    };
+    l.onPageFinished = (url, success) {
+      created.loading = false;
+      if (created.title.isEmpty) {
+        created.title = Uri.tryParse(created.url)?.host ?? created.url;
+      }
+      if (!mounted || !tabs.contains(created)) return;
+      if (!created.private && created.url.startsWith('https://')) {
+        widget.library.visited(created.url);
+      }
+      if (identical(tab, created)) {
+        address.text = created.url;
+        setState(() {});
+      }
+    };
+    l.onError = (description) {
+      if (mounted && identical(tab, created)) {
+        setState(() {
+          error = description;
           created.loading = false;
-          created.title =
-              await controller.getTitle() ?? Uri.tryParse(url)?.host ?? url;
-          created.canBack = await controller.canGoBack();
-          created.canForward = await controller.canGoForward();
-          if (!mounted || !tabs.contains(created)) return;
-          if (!created.private && url.startsWith('https://'))
-            widget.library.visited(url);
-          if (mounted && identical(tab, created)) {
-            address.text = url;
-            setState(() => error = null);
-            if (widget.library.enhancedDark) await _injectDark(controller);
-          }
-        },
-        onWebResourceError: (e) {
-          if (e.isForMainFrame == true && mounted && identical(tab, created)) {
-            setState(() {
-              error = e.description;
-              created.loading = false;
-            });
-          }
-        },
-      ),
-    );
+        });
+      }
+    };
+    l.onNewTabRequested = (url) {
+      if (mounted) _newTab(url, private: created.private);
+    };
+    l.onExternalLink = (url) => _openExternalScheme(url);
+    l.onFullscreen = (value) {
+      if (!mounted || !identical(tab, created)) return;
+      SystemChrome.setEnabledSystemUIMode(
+        value ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      );
+      setState(() => fullscreen = value);
+    };
+    l.onCrashed = () {
+      if (mounted && identical(tab, created)) {
+        _notice('أُعيد تشغيل الصفحة بعد توقف المحرك');
+      }
+    };
+    if (widget.library.enhancedDark) engine.command('dark', {'on': true});
     tabs.add(created);
     selected = tabs.length - 1;
     address.text = '';
+    _syncSecure();
     if (mounted) setState(() {});
     if (initial != null && initial.isNotEmpty && initial != home) {
       _go(initial);
     }
+  }
+
+  void _syncSecure() {
+    BrowserEngine.instance.setSecureWindow(
+      tabs.isNotEmpty && tab.private && widget.isActive,
+    );
+  }
+
+  Future<void> _openExternalScheme(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    // Only hand a short allow-list of schemes to other apps.
+    if (!{'tel', 'mailto', 'sms', 'geo'}.contains(uri.scheme)) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   void _go(String input) {
@@ -153,7 +180,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
     FocusScope.of(context).unfocus();
     reader = false;
     tab.url = parsed.toString();
-    tab.controller.loadRequest(parsed);
+    tab.engine.load(parsed.toString());
     address.text = parsed.toString();
     if (mounted) setState(() {});
   }
@@ -166,9 +193,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
       error = null;
       address.text = tab.home ? '' : tab.url;
     });
+    _syncSecure();
   }
 
   void _close(int index) {
+    tabs[index].engine.close();
     if (tabs.length == 1) {
       tabs.clear();
       selected = 0;
@@ -178,13 +207,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     tabs.removeAt(index);
     if (index < selected) selected--;
     if (selected >= tabs.length) selected = tabs.length - 1;
+    _syncSecure();
     if (mounted) setState(() => address.text = tab.home ? '' : tab.url);
   }
 
   Future<void> _back() async {
     if (tab.home) return;
-    if (await tab.controller.canGoBack()) {
-      await tab.controller.goBack();
+    if (tab.canBack) {
+      await tab.engine.goBack();
     } else {
       _returnHome();
     }
@@ -198,53 +228,31 @@ class _BrowserScreenState extends State<BrowserScreen> {
     tab.canBack = false;
     tab.canForward = false;
     address.clear();
-    tab.controller.loadRequest(Uri.parse(home));
+    tab.engine.load(home);
     setState(() {});
   }
 
   Future<void> _forward() async {
-    if (!tab.home && await tab.controller.canGoForward()) {
-      await tab.controller.goForward();
-    }
+    if (!tab.home && tab.canForward) await tab.engine.goForward();
   }
 
   void _refresh() {
     if (tab.home) return;
     if (tab.loading) {
-      tab.controller.runJavaScript('window.stop()');
+      tab.engine.stop();
     } else {
-      tab.controller.reload();
+      tab.engine.reload();
     }
-  }
-
-  Future<void> _injectDark(WebViewController web) async {
-    try {
-      await web.runJavaScript(r'''(function(){
-        if(document.getElementById('ibetoo-dark-overlay'))return;
-        const style=document.createElement('style');
-        style.id='ibetoo-dark-overlay';
-        style.textContent='html{filter:invert(0.88) hue-rotate(180deg)!important} img,video,canvas,svg{filter:invert(1) hue-rotate(180deg)!important}';
-        document.head.appendChild(style);
-      })();''');
-    } catch (_) {}
   }
 
   Future<void> _reader() async {
     if (tab.home) return;
     try {
       if (reader) {
-        await tab.controller.reload();
+        await tab.engine.reload();
         reader = false;
       } else {
-        await tab.controller.runJavaScript(r'''(function(){
-          let article=document.querySelector('article')||
-            document.querySelector('main')||document.body;
-          let clone=article.cloneNode(true);
-          clone.querySelectorAll('script,style,nav,aside,header,footer,iframe,button,form').forEach(e=>e.remove());
-          document.body.innerHTML='';
-          document.body.style.cssText='margin:0;padding:22px;max-width:800px;margin:auto;font-family:system-ui;font-size:19px;line-height:1.8;background:#fff;color:#232323';
-          document.body.appendChild(clone);
-        })();''');
+        await tab.engine.command('reader');
         reader = true;
       }
       if (mounted) setState(() {});
@@ -340,8 +348,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 ),
                 if (tabs.any((t) => t.private))
                   const Text(
-                    'التبويب الخاص لا يُضاف لسجل التطبيق. WebView يشارك '
-                    'بيانات الجلسة مع التبويبات الأخرى، لذلك ليس عزلاً كاملًا.',
+                    'التبويب الخاص لا يُضاف للسجل، وله جلسة معزولة بالكامل '
+                    '(كوكيز وتخزين وكاش) وتُمسح عند إغلاقه.',
                     style: TextStyle(fontSize: 11),
                   ),
               ],
@@ -762,7 +770,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 onChanged: (v) {
                   widget.library.setEnhancedDark(v);
                   Navigator.pop(ctx);
-                  tab.controller.reload();
+                  for (final t in tabs) {
+                    t.engine.command('dark', {'on': v});
+                  }
                 },
               ),
             ],
@@ -832,17 +842,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
               Expanded(
                 child: Stack(
                   children: [
-                    IndexedStack(
-                      index: selected,
-                      children: [
-                        for (final item in tabs)
-                          KeyedSubtree(
-                            key: ObjectKey(item),
-                            child: item.home
-                                ? _homePage()
-                                : WebViewWidget(controller: item.controller),
-                          ),
-                      ],
+                    // Only the selected tab mounts a native view; the other
+                    // sessions stay alive inside the engine.
+                    Positioned.fill(
+                      child: KeyedSubtree(
+                        key: ObjectKey(current),
+                        child: current.home
+                            ? _homePage()
+                            : current.engine.buildView(),
+                      ),
                     ),
                     if (current.loading)
                       Positioned(
@@ -872,7 +880,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                             trailing: IconButton(
                               tooltip: 'إعادة المحاولة',
                               icon: const Icon(Icons.refresh),
-                              onPressed: current.controller.reload,
+                              onPressed: current.engine.reload,
                             ),
                           ),
                         ),
@@ -883,7 +891,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
             ],
           ),
         ),
-        bottomNavigationBar: Material(
+        bottomNavigationBar: fullscreen
+            ? null
+            : Material(
           key: const ValueKey('browser-toolbar'),
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           child: SafeArea(

@@ -1,90 +1,58 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'package:ibetoo_media/src/browser.dart';
+import 'package:ibetoo_media/src/engine/browser_engine.dart';
 import 'package:ibetoo_media/src/library.dart';
 import 'package:ibetoo_media/src/theme.dart';
 
-class _WebPlatform extends WebViewPlatform {
-  final controllers = <_WebController>[];
+class _FakeTab extends EngineTab {
+  _FakeTab({required super.id, required super.private});
+  final loaded = <String>[];
+  var closed = false;
+
   @override
-  PlatformWebViewController createPlatformWebViewController(
-    PlatformWebViewControllerCreationParams params,
-  ) {
-    final controller = _WebController(params);
-    controllers.add(controller);
-    return controller;
+  Future<void> load(String url) async {
+    loaded.add(url);
+    listener.onPageStarted?.call(url);
+    listener.onPageFinished?.call(url, true);
   }
 
   @override
-  PlatformNavigationDelegate createPlatformNavigationDelegate(
-    PlatformNavigationDelegateCreationParams params,
-  ) => _Navigation(params);
+  Future<void> goBack() async {}
   @override
-  PlatformWebViewWidget createPlatformWebViewWidget(
-    PlatformWebViewWidgetCreationParams params,
-  ) => _WebWidget(params);
-}
-
-class _WebController extends PlatformWebViewController {
-  _WebController(super.params) : super.implementation();
-  _Navigation? delegate;
+  Future<void> goForward() async {}
   @override
-  Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
+  Future<void> reload() async {}
   @override
-  Future<void> setBackgroundColor(Color color) async {}
+  Future<void> stop() async {}
   @override
-  Future<void> setPlatformNavigationDelegate(
-    PlatformNavigationDelegate value,
-  ) async {
-    delegate = value as _Navigation;
-  }
-
+  Future<void> setDesktopMode(bool desktop) async {}
   @override
-  Future<void> loadRequest(LoadRequestParams params) async {
-    delegate?.started?.call(params.uri.toString());
-    delegate?.finished?.call(params.uri.toString());
-  }
-
+  Future<void> command(String name, [Map<String, Object?> args = const {}]) async {}
   @override
-  Future<String?> getTitle() async => 'Example web page';
+  Future<void> close() async => closed = true;
   @override
-  Future<bool> canGoBack() async => false;
-  @override
-  Future<bool> canGoForward() async => false;
-}
-
-class _Navigation extends PlatformNavigationDelegate {
-  _Navigation(super.params) : super.implementation();
-  PageEventCallback? started, finished;
-  @override
-  Future<void> setOnNavigationRequest(
-    NavigationRequestCallback callback,
-  ) async {}
-  @override
-  Future<void> setOnPageStarted(PageEventCallback callback) async {
-    started = callback;
-  }
-
-  @override
-  Future<void> setOnPageFinished(PageEventCallback callback) async {
-    finished = callback;
-  }
-
-  @override
-  Future<void> setOnProgress(ProgressCallback callback) async {}
-  @override
-  Future<void> setOnWebResourceError(WebResourceErrorCallback callback) async {}
-}
-
-class _WebWidget extends PlatformWebViewWidget {
-  _WebWidget(super.params) : super.implementation();
-  @override
-  Widget build(BuildContext context) => const ColoredBox(
+  Widget buildView() => const ColoredBox(
     color: Colors.white,
     child: Center(child: Text('Web content')),
   );
+}
+
+class _FakeEngine implements BrowserEngine {
+  final tabs = <_FakeTab>[];
+  final secureCalls = <bool>[];
+  @override
+  EngineTab createTab({bool private = false, String? containerId}) {
+    final tab = _FakeTab(id: 'fake${tabs.length}', private: private);
+    tabs.add(tab);
+    return tab;
+  }
+
+  @override
+  Future<void> setSecureWindow(bool secure) async => secureCalls.add(secure);
+  @override
+  Future<void> clearBrowsingData() async {}
 }
 
 void main() {
@@ -98,8 +66,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     SharedPreferences.setMockInitialValues({});
     final library = await MediaLibrary.load();
-    final platform = _WebPlatform();
-    WebViewPlatform.instance = platform;
+    final engine = _FakeEngine();
+    BrowserEngine.instance = engine;
     var openedSections = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -125,16 +93,42 @@ void main() {
     await tester.tap(find.text('Google').first);
     await tester.pumpAndSettle();
     expect(find.text('Web content'), findsOneWidget);
-    expect(find.text('Example web page'), findsNothing);
+    expect(engine.tabs.single.loaded, isNotEmpty);
     await tester.tap(find.byTooltip('رجوع للصفحة السابقة'));
     await tester.pumpAndSettle();
     expect(find.text('iBetoo Browser'), findsOneWidget);
     expect(
-      platform.controllers.length,
+      engine.tabs.length,
       1,
       reason: 'Returning home must reuse the current tab',
     );
     await tester.pumpWidget(const SizedBox.shrink());
+    library.dispose();
+  });
+
+  testWidgets('private tab blocks screenshots and closes its session', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final library = await MediaLibrary.load();
+    final engine = _FakeEngine();
+    BrowserEngine.instance = engine;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: mediaTheme(Brightness.light),
+        home: Directionality(
+          textDirection: TextDirection.rtl,
+          child: BrowserScreen(library: library),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('قائمة المتصفح'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    // Disposing the screen closes every engine session.
+    expect(engine.tabs.every((t) => t.closed), isTrue);
+    expect(engine.secureCalls.last, isFalse);
     library.dispose();
   });
 }

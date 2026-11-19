@@ -4,7 +4,9 @@ Arabic Android offline media library and Quetta-inspired browser. **No in-app fi
 
 Core media: MediaStore index for audio/video/images, live Android ContentObserver updates, folders, albums, artists, thumbnails, playlists, smart favorites/history/resume, queue, background audio/lock-screen MediaSession, video PiP/gestures/next, SRT/VTT, Android equalizer, speed/sleep timer, SHA-256 duplicate detection (read-only), user-consented media imports, backup of library metadata and optional biometric/device-lock access.
 
-Browser: simple bottom address bar, favorites, history, tabs, quick access sites, search engine choice, reader mode, experimental page darkening and local-history-free private tabs. Android WebView is not a full standalone Chromium browser. Chrome extensions and complete request-level ad blocking are not implemented. Private tabs share WebView cookie storage and are not fully isolated.
+Browser: GeckoView (Mozilla Gecko, the Firefox engine) hosted in Flutter as a platform view, not Android WebView. Bottom address bar, favorites, history, tabs, search engine choice, reader mode, page darkening, HTTPS-only mode, Enhanced Tracking Protection, and Firefox WebExtension support (uBlock Origin is bundled by CI when addons.mozilla.org is reachable; the in-house `aflaak-core` extension carries the dark/reader commands). Private tabs use private mode plus a unique contextId, so cookies, storage and cache are isolated and wiped on close, and screenshots are blocked (FLAG_SECURE) while one is on screen. Chrome extensions are not supported by Gecko.
+
+Not implemented yet in the engine bridge: file-upload picker, site permission prompts (camera/mic/location), long-press context menu, find-in-page, per-site settings, media sniffer, background play/PiP for web video.
 
 Original phone files are never silently renamed, moved or removed. Imported app-owned copies can be renamed and organized within the app. Backups restore metadata, not raw media files. Codec and DRM restrictions apply.
 

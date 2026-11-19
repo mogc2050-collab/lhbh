@@ -10,5 +10,8 @@ TOOLS="$SDK/build-tools/$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type 
 "$TOOLS/aapt" dump badging "$APK" | grep -E '^(package:|application-label:|launchable-activity:)'
 "$TOOLS/aapt" dump badging "$APK" | grep -q "com.ibetoo.ibetoo_media" || { echo 'Wrong app package!'; exit 3; }
 unzip -Z1 "$APK" | grep -qE 'lib/(arm64-v8a|armeabi-v7a)/libflutter.so' || { echo 'Flutter ARM runtime missing'; exit 4; }
+unzip -Z1 "$APK" | grep -qE 'lib/(arm64-v8a|armeabi-v7a)/libxul.so' || { echo 'GeckoView engine (libxul.so) missing'; exit 5; }
+unzip -Z1 "$APK" | grep -q 'assets/web_extensions/aflaak-core/manifest.json' || { echo 'aflaak-core extension missing'; exit 6; }
+if unzip -Z1 "$APK" | grep -q 'assets/web_extensions/ublock-origin/manifest.json'; then echo 'uBlock Origin bundled'; else echo 'WARNING: uBlock Origin not bundled'; fi
 sha256sum "$APK"
 echo 'Signed media app verified.'

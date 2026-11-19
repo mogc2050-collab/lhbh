@@ -594,9 +594,9 @@ class _MediaSettings extends StatelessWidget {
           const Padding(
             padding: EdgeInsets.all(12),
             child: Text(
-              'iBetoo Media يدعم تنزيل روابط الملفات المباشرة عبر أندرويد. المتصفح يستخدم '
-              'Android WebView، ولا يدّعي دعم إضافات Chrome أو الحظر الكامل '
-              'لمتتبعات المواقع. كل قوائم الوسائط محفوظة على الجهاز.',
+              'iBetoo Media يدعم تنزيل روابط الملفات المباشرة عبر أندرويد. المتصفح يعمل '
+              'بمحرك GeckoView (محرك فايرفوكس) ويدعم إضافات فايرفوكس مثل uBlock Origin، '
+              'ولا يدعم إضافات Chrome. كل قوائم الوسائط محفوظة على الجهاز.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.grey, height: 1.6, fontSize: 12),
             ),
