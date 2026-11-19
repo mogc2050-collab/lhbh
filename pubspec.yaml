@@ -1,7 +1,7 @@
 name: medieval_life
-description: Offline Arabic medieval economics, cities and life simulation.
+description: A rebuilt offline Arabic medieval economic and life simulation.
 publish_to: none
-version: 2.0.0+3
+version: 3.0.0+4
 
 environment:
   sdk: '>=3.6.0 <4.0.0'
@@ -19,5 +19,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  assets:
-    - design_reference/

@@ -1,43 +1,46 @@
 import 'package:flutter/material.dart';
-import 'game/game_state.dart';
-import 'ui/premium_game_screen.dart';
-import 'ui/game_theme.dart';
+import 'kingdom/engine.dart';
+import 'visual/game_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const KingdomApp());
+  runApp(const RebuiltKingdomApp());
 }
 
-class KingdomApp extends StatelessWidget {
-  const KingdomApp({super.key});
+class RebuiltKingdomApp extends StatelessWidget {
+  const RebuiltKingdomApp({super.key});
 
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'ممالك الحياة',
     debugShowCheckedModeBanner: false,
-    theme: gameTheme(),
     locale: const Locale('ar'),
-    builder: (context, child) =>
-        Directionality(textDirection: TextDirection.rtl, child: child!),
-    home: FutureBuilder<GameState>(
-      future: GameState.load(),
+    theme: ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xff182d25),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xffd0a150),
+        brightness: Brightness.dark,
+      ),
+    ),
+    builder: (context, child) => Directionality(
+      textDirection: TextDirection.rtl, child: child!),
+    home: FutureBuilder<KingdomEngine>(
+      future: KingdomEngine.load(),
       builder: (context, snapshot) {
         if (!snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(),
-                SizedBox(height: 20),
-                Text('جارٍ تجهيز المملكة...'),
-              ],
-            )),
-          );
+          return const Scaffold(body: Center(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 18),
+              Text('جارٍ إنشاء عالمك الجديد...'),
+            ],
+          )));
         }
-        return PremiumGameScreen(
-          key: const ValueKey('premium-kingdom'),
-          game: snapshot.data!,
-        );
+        return KingdomGame(key: const ValueKey('rebuild-v3'),
+          engine: snapshot.data!);
       },
     ),
   );
