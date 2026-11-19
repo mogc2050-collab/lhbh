@@ -167,7 +167,18 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
             throw IllegalArgumentException("Only indexed MediaStore URIs allowed")
         }
         val id=uri.lastPathSegment ?: throw IllegalArgumentException("Missing media ID")
-        val target=File(activity.cacheDir,"ibetoo_track_" + id + ".audio")
+        val mime=activity.contentResolver.getType(uri) ?: ""
+        val ext=when {
+            mime.contains("mpeg") -> ".mp3"
+            mime.contains("mp4") -> ".m4a"
+            mime.contains("aac") -> ".aac"
+            mime.contains("ogg") -> ".ogg"
+            mime.contains("flac") -> ".flac"
+            mime.contains("wav") -> ".wav"
+            mime.startsWith("video/") -> ".mp4"
+            else -> ".mp3"
+        }
+        val target=File(activity.cacheDir,"ibetoo_track_" + id + ext)
         if(target.isFile && target.length()>0) return target.absolutePath
         val maxBytes=180L*1024*1024
         val source=activity.contentResolver.openInputStream(uri)
