@@ -32,6 +32,14 @@ void main() {
         expect(MediaUtils.canDownload(Uri.parse(site)),false);
       }
     });
+    test('insecure HTTP links are rejected for background downloading', () {
+      expect(MediaUtils.canDownload(Uri.parse('http://example.org/x.mp4')),false);
+      expect(MediaUtils.validateDownload('http://example.org/x.mp4'),isNotNull);
+    });
+    test('unsafe script-looking text is not treated as a web host', () {
+      final url=MediaUtils.interpretAddress('javascript:alert(x.y)');
+      expect(url.host,'www.google.com');
+    });
     test('rejects unsafe URL schemes for download manager', () {
       expect(MediaUtils.canDownload(Uri.parse('javascript:alert(1)')),false);
       expect(MediaUtils.canDownload(Uri.parse('file:///sdcard/data')),false);
