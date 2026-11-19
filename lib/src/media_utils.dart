@@ -67,47 +67,7 @@ class MediaUtils {
   static String? validateDownload(String text) {
     final uri = Uri.tryParse(text.trim());
     if (uri == null || !canDownload(uri)) {
-      return 'الرابط لازم يكون مباشرًا بصيغة HTTP أو HTTPS ومن مصدر يسمح بالتنزيل.';
-    }
-    if (uri.scheme != 'https') {
-      return 'الرابط غير مشفّر؛ التطبيق يقبل HTTPS فقط.';
-    }
-    return null;
-  }
-}
-);
-    if (domain.hasMatch(value)) {
-      return Uri.parse('https://$value');
-    }
-    return Uri.https('www.google.com','/search',{'q':value});
-  }
-
-  static String fileTitle(Uri uri) {
-    final component = Uri.decodeComponent(uri.pathSegments.isNotEmpty
-        ? uri.pathSegments.last : '');
-    if (component.isNotEmpty && !component.contains('/')) return component;
-    return 'media-file';
-  }
-
-  static String displaySize(int bytes) {
-    if (bytes < 0) return 'غير معروف';
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) {
-      return (bytes / 1024).toStringAsFixed(1) + ' KB';
-    }
-    if (bytes < 1024 * 1024 * 1024) {
-      return (bytes / (1024 * 1024)).toStringAsFixed(1) + ' MB';
-    }
-    return (bytes / (1024 * 1024 * 1024)).toStringAsFixed(1) + ' GB';
-  }
-
-  static String? validateDownload(String text) {
-    final uri = Uri.tryParse(text.trim());
-    if (uri == null || !canDownload(uri)) {
-      return 'الرابط لازم يكون مباشرًا بصيغة HTTP أو HTTPS ومن مصدر يسمح بالتنزيل.';
-    }
-    if (uri.scheme != 'https') {
-      return 'الرابط غير مشفّر؛ التطبيق يقبل HTTPS فقط.';
+      return 'الرابط لازم يكون HTTPS مباشرًا ومن مصدر يسمح بالتنزيل.';
     }
     return null;
   }
