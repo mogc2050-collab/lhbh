@@ -370,9 +370,9 @@ class _BrowserScreenState extends State<BrowserScreen>{
             widget.library.toggleBookmark(current.url);setState((){});
           }),
           IconButton(icon:const Icon(Icons.more_vert),onPressed:_menu),
-        ])else Padding(padding:const EdgeInsets.fromLTRB(14,12,14,0),
+        ])else Padding(padding:const EdgeInsets.fromLTRB(14,2,14,0),
           child:Row(children:[
-            const Text('iBetoo',style:TextStyle(fontSize:20,
+            const Text('iBetoo',style:TextStyle(fontSize:17,
               fontWeight:FontWeight.w900)),
             const Spacer(),IconButton(
               onPressed:_menu,icon:const Icon(Icons.more_horiz)),
@@ -393,9 +393,9 @@ class _BrowserScreenState extends State<BrowserScreen>{
                 onPressed:current.controller.reload),
             ))),
         ])),
-        Padding(padding:const EdgeInsets.fromLTRB(12,5,12,8),
+        Padding(padding:const EdgeInsets.fromLTRB(10,3,10,4),
           child:Container(
-            height:58,padding:const EdgeInsets.symmetric(horizontal:4),
+            height:46,padding:const EdgeInsets.symmetric(horizontal:2),
             decoration:BoxDecoration(
               color:Theme.of(context).colorScheme.surfaceContainerLow,
               border:Border.all(color:Theme.of(context).dividerColor),
@@ -417,7 +417,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
                         Navigator.pop(ctx);_go(address.text);
                       },child:const Text('انتقال'))]));
                 },
-                child:Container(height:43,
+                child:Container(height:37,
                   padding:const EdgeInsets.symmetric(horizontal:13),
                   alignment:Alignment.centerRight,
                   child:Row(children:[
@@ -437,7 +437,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
                 else{current.controller.reload();}
               }),
               InkWell(onTap:_showTabs,
-                child:Container(width:35,height:35,
+                child:Container(width:30,height:30,
                   alignment:Alignment.center,
                   decoration:BoxDecoration(
                     border:Border.all(color:MediaPalette.orange),
