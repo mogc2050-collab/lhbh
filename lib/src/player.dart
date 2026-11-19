@@ -4,6 +4,7 @@ import 'dart:math';
 import 'device_media.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
 import 'library.dart';
@@ -275,7 +276,7 @@ class VideoDetail extends StatefulWidget {
 class _VideoDetailState extends State<VideoDetail> {
   VideoPlayerController? controller;
   Object? failure;
-  bool loading=true,changing=false;
+  bool loading=true,changing=false,fullscreen=false;
   late int index;
   late String currentSource,currentTitle;
 
@@ -334,10 +335,22 @@ class _VideoDetailState extends State<VideoDetail> {
       });
     }
   }
+  Future<void> _toggleFullscreen() async {
+    fullscreen=!fullscreen;
+    await SystemChrome.setPreferredOrientations(
+      fullscreen?
+        [DeviceOrientation.landscapeLeft,DeviceOrientation.landscapeRight]:
+        [DeviceOrientation.portraitUp]);
+    if(mounted)setState((){});
+  }
+
   @override
   void dispose(){
     controller?.removeListener(_onVideoChanged);
     controller?.dispose();
+    if(fullscreen){
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    }
     super.dispose();
   }
 
@@ -347,6 +360,10 @@ class _VideoDetailState extends State<VideoDetail> {
     return Scaffold(
       appBar:AppBar(title:Text(currentTitle,maxLines:1),
         actions:[
+          if(video!=null)IconButton(
+            tooltip:fullscreen?'عودة للوضع الرأسي':'ملء الشاشة',
+            icon:Icon(fullscreen?Icons.fullscreen_exit:Icons.fullscreen),
+            onPressed:_toggleFullscreen),
           if(video!=null&&widget.music!=null)
             IconButton(
               tooltip:'استمر في الاستماع والشاشة مقفولة',
