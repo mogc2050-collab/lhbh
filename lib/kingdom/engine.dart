@@ -15,6 +15,34 @@ class KingdomEngine extends ChangeNotifier {
   final List<Site> sites = [];
   final List<String> journal = [];
   final Set<String> delivered = {};
+  final Set<String> claimedGoals = {};
+  int housesBuilt = 0, woodProduced = 0, grainProduced = 0;
+  int mealsEaten = 0, goodsTraded = 0;
+
+  static const questTitles = <String,String>{
+    'homes': 'وسّع القرية: ابنِ منزلًا جديدًا',
+    'wood': 'عزّز الإنتاج: اجمع أو أنتج 30 خشبًا',
+    'grain': 'أمّن الغذاء: أنتج 30 قمحًا',
+    'meal': 'اهتم ببطلك: تناول 3 وجبات',
+    'trade': 'انشط السوق: تداول 25 سلعة',
+  };
+  int goalTarget(String id) => switch (id) {
+    'homes' => 1, 'wood' => 30, 'grain' => 30,
+    'meal' => 3, 'trade' => 25, _ => 1,
+  };
+  int goalProgress(String id) => switch (id) {
+    'homes' => housesBuilt, 'wood' => woodProduced,
+    'grain' => grainProduced, 'meal' => mealsEaten,
+    'trade' => goodsTraded, _ => 0,
+  };
+  GameResult claimGoal(String id) {
+    if (!questTitles.containsKey(id)) return _fail('مهمة غير معروفة');
+    if (claimedGoals.contains(id)) return _fail('استلمت مكافأة المهمة');
+    if (goalProgress(id) < goalTarget(id)) return _fail('المهمة لم تكتمل');
+    claimedGoals.add(id);
+    _give({Good.gold:200});
+    return _success('مكافأة المهمة: 200 ذهب و50 خبرة',experience:50);
+  }
   final Map<String,Map<Good,int>> cityStock = {};
   final Map<String,int> cityGold = {};
   final List<Point<int>> route = [];
@@ -161,6 +189,7 @@ class KingdomEngine extends ChangeNotifier {
     if(!canPay(cost)) return _fail('موارد البناء لا تكفي');
     _take(cost);
     sites.add(Site(nextId++,kind,x,y));
+    if (kind == Facility.house) housesBuilt++;
     return _success('شيدت ${kind.info.name} في ($x،$y)',experience:26);
   }
   GameResult upgrade(Site s) {
@@ -204,6 +233,8 @@ class KingdomEngine extends ChangeNotifier {
       final gives=outputs.values.fold<int>(0,(a,b)=>a+b);
       if(stored-takes+gives>storageLimit) continue;
       _take(inputs);_give(outputs);
+      woodProduced += outputs[Good.wood] ?? 0;
+      grainProduced += outputs[Good.grain] ?? 0;
       if(s.kind==Facility.tavern) {
         stock[Good.gold]=gold+12*s.level;
         _need('المزاج',1.5*s.level);
@@ -301,6 +332,7 @@ class KingdomEngine extends ChangeNotifier {
       case 'eat':
         if(amount(Good.bread)<1) return _fail('لا يوجد خبز');
         _consumeHero({Good.bread:1});_need('الجوع',28);
+        mealsEaten++;
         return _success('تناولت خبزًا واستعدت نشاطك');
       case 'drink':
         if(amount(Good.water)<1) return _fail('لا توجد مياه');
@@ -318,6 +350,7 @@ class KingdomEngine extends ChangeNotifier {
         if(needs['الطاقة']!<12) return _fail('البطل مرهق');
         if(stored+8>storageLimit) return _fail('المخزن ممتلئ');
         _give({Good.wood:8});_need('الطاقة',-9);_need('الجوع',-4);
+        woodProduced += 8;
         return _success('جمعت 8 أخشاب',experience:9);
       case 'mine':
         if(needs['الطاقة']!<12) return _fail('البطل مرهق');
@@ -365,6 +398,7 @@ class KingdomEngine extends ChangeNotifier {
       _take({Good.gold:cost});_give({g:qty});
       market[g]=market[g]!-qty;
       cityGold[cityId]=cityGold[cityId]!+cost;
+      goodsTraded += qty;
       return _success('اشتريت $qty ${g.label} مقابل $cost ذهب',
         experience:max(1,qty~/10));
     }
@@ -373,6 +407,7 @@ class KingdomEngine extends ChangeNotifier {
     _take({g:qty});_give({Good.gold:cost});
     market[g]=(market[g]??0)+qty;
     cityGold[cityId]=cityGold[cityId]!-cost;
+    goodsTraded += qty;
     return _success('بعت $qty ${g.label} وربحت $cost ذهب',
       experience:max(1,qty~/10));
   }
@@ -495,6 +530,10 @@ class KingdomEngine extends ChangeNotifier {
     'cityStock':{for(final e in cityStock.entries) e.key:{
        for(final e2 in e.value.entries)e2.key.name:e2.value}},
     'cityGold':cityGold,'delivered':delivered.toList(),
+    'claimedGoals':claimedGoals.toList(),
+    'housesBuilt':housesBuilt,'woodProduced':woodProduced,
+    'grainProduced':grainProduced,'mealsEaten':mealsEaten,
+    'goodsTraded':goodsTraded,
     'journal':journal.take(30).toList(),
   };
   void restore(Map<String,dynamic> d) {
@@ -511,6 +550,13 @@ class KingdomEngine extends ChangeNotifier {
     debt=max(0,number('debt',debt));
     dayIncome=max(0,number('dayIncome',0));
     dayExpenses=max(0,number('dayExpenses',0));
+    housesBuilt=max(0,number('housesBuilt',0));
+    woodProduced=max(0,number('woodProduced',0));
+    grainProduced=max(0,number('grainProduced',0));
+    mealsEaten=max(0,number('mealsEaten',0));
+    goodsTraded=max(0,number('goodsTraded',0));
+    claimedGoals.addAll((d['claimedGoals'] as List? ?? [])
+        .whereType<String>().where(questTitles.containsKey));
     caravanAmount=max(0,number('caravanAmount',0));
     caravanReady=max(0,number('caravanReady',0));
     caravanCity=d['caravanCity'] as String? ?? '';
