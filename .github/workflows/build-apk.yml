@@ -20,28 +20,37 @@ concurrency:
 jobs:
   android:
     name: Check, sign, package and verify Android APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
       - name: Checkout new media app
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 21 for AGP lint compatibility
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.50.0'
           cache: true
 
-      - name: Print environment
+      - name: Verify Java 21 and pinned Flutter toolchain
+        shell: bash
         run: |
+          set -euo pipefail
           flutter --version
           java -version
+          echo "JAVA_HOME=$JAVA_HOME"
+          java_major=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.specification.version = //p' | head -1)
+          if [[ "$java_major" != "21" ]]; then
+            echo "::error::Android lint in AGP 9.3 needs JDK 21; detected $java_major"
+            exit 1
+          fi
 
       - name: Create independent Android application
         run: flutter create --platforms=android --project-name=ibetoo_media --org=com.ibetoo .
@@ -54,6 +63,15 @@ jobs:
 
       - name: Configure background downloads, audio, PiP, app icon and signing
         run: python3 scripts/customize_android.py
+
+      - name: Verify Gradle daemon uses Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew --stop || true
+          ./gradlew --version
+          echo "Gradle JVM: $(java -version 2>&1 | head -1)"
 
       - name: Load optional PRIVATE signing
         shell: bash
