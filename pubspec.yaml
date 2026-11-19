@@ -1,7 +1,7 @@
 name: ibetoo_media
-description: Ad-free Arabic media organizer, browser and authorized file downloader.
+description: Arabic offline media library and privacy-friendly browser without a downloader.
 publish_to: none
-version: 2.0.0+2
+version: 3.0.0+3
 
 environment:
   sdk: '>=3.11.0 <4.0.0'
@@ -20,6 +20,7 @@ dependencies:
   path_provider: ^2.1.5
   url_launcher: ^6.3.3
   google_sign_in: ^7.2.0
+  local_auth: ^3.0.2
 
 dev_dependencies:
   flutter_test:
