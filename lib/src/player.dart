@@ -174,7 +174,9 @@ class AudioDetail extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context)=>Scaffold(
+  Widget build(BuildContext context)=>AnimatedBuilder(
+    animation:music,
+    builder:(context,_)=>Scaffold(
     appBar:AppBar(title:const Text('مشغّل الصوت')),
     body:Padding(
       padding:const EdgeInsets.all(24),
@@ -239,6 +241,7 @@ class AudioDetail extends StatelessWidget {
         const Text('التشغيل يستمر في الخلفية مع أزرار من شاشة القفل.',
           textAlign:TextAlign.center),
       ]),
+    ),
     ),
   );
 }
