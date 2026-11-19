@@ -77,6 +77,21 @@ class MediaLinkInspector {
     final audio=_directAudio(mime)||MediaUtils.audio.contains(extension);
     final video=_directVideo(mime)||MediaUtils.video.contains(extension);
     final file=MediaUtils.supported.contains(extension);
+    if(MediaUtils.extension(filename).isEmpty){
+      final suffix=switch(mime){
+        'audio/mpeg'=>'.mp3',
+        'audio/mp4'=>'.m4a',
+        'audio/aac'=>'.aac',
+        'audio/ogg'=>'.ogg',
+        'video/mp4'=>'.mp4',
+        'video/webm'=>'.webm',
+        'image/jpeg'=>'.jpg',
+        'image/png'=>'.png',
+        'application/pdf'=>'.pdf',
+        _=>'',
+      };
+      if(suffix.isNotEmpty)filename+=suffix;
+    }
     final type=audio?LinkKind.audio:video?LinkKind.video:
       file?LinkKind.file:LinkKind.webpage;
     return LinkInspection(original:uri,kind:type,
