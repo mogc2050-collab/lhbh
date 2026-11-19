@@ -172,7 +172,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       // Lists user-visible direct anchors only; does not extract streams,
       // decrypt DRM, or access any site-protected media.
       final result=await tab.controller.runJavaScriptReturningResult(
-        """JSON.stringify(Array.from(document.querySelectorAll('a[href]'))
+        r"""JSON.stringify(Array.from(document.querySelectorAll('a[href]'))
           .map(a => ({name:(a.textContent||'').trim().slice(0,70),
                        url:a.href}))
           .filter(x => /\\.(mp3|m4a|wav|ogg|mp4|m4v|webm|mov|pdf|zip|png|jpg|jpeg|gif|epub)(\\?|#|$)/i.test(x.url))
