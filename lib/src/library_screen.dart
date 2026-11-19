@@ -24,12 +24,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Future<void> _import() async {
     setState(()=>loading=true);
     try {
-      final picked=await FilePicker.platform.pickFiles(
-        allowMultiple:true,type:FileType.any,
-        withData:false,withReadStream:false);
-      if(picked==null)return;
+      final picked=await FilePicker.pickFiles(type:FileType.any);
+      if(picked.isEmpty)return;
       var count=0;
-      for(final file in picked.files){
+      for(final file in picked){
         if(file.path!=null){
           await widget.library.importFile(file.path!,file.name);
           count++;
