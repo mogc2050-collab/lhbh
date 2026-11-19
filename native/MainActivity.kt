@@ -1,6 +1,10 @@
 package com.ibetoo.ibetoo_media
 
 import android.app.PictureInPictureParams
+import android.app.DownloadManager
+import android.content.Context
+import android.os.Environment
+import android.webkit.URLUtil
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -26,6 +30,29 @@ class MainActivity: AudioServiceFragmentActivity() {
                             result.success(enterPictureInPictureMode(
                                 PictureInPictureParams.Builder().build()))
                         }else result.success(false)
+                    }
+                    "downloadUrl"->{
+                        val url=call.argument<String>("url") ?: ""
+                        val uri=Uri.parse(url)
+                        if(uri.scheme!="https" || uri.host.isNullOrBlank()){
+                            throw IllegalArgumentException("Only direct HTTPS file URLs are supported")
+                        }
+                        val suggested=URLUtil.guessFileName(url,null,null)
+                        val clean=suggested.replace(Regex("[^a-zA-Z0-9._-]"),"_").take(100)
+                            .ifBlank { "download.bin" }
+                        val request=DownloadManager.Request(uri)
+                            .setTitle(clean)
+                            .setDescription("iBetoo Media")
+                            .setNotificationVisibility(
+                                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                            .setDestinationInExternalPublicDir(
+                                Environment.DIRECTORY_DOWNLOADS,clean)
+                        val manager=getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                        result.success(manager.enqueue(request))
+                    }
+                    "openDownloads"->{
+                        startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS))
+                        result.success(null)
                     }
                     "shareLocal"->{
                         val path=call.argument<String>("path") ?: ""
