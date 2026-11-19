@@ -34,12 +34,16 @@ ThemeData mediaTheme(Brightness brightness) {
     onSurface:foreground,
     outline:divider,
     surfaceContainerLow:panel,
-    surfaceContainer:night?const Color(0xff202730):const Color(0xfff3f0ec),
-    surfaceContainerHigh:night?const Color(0xff252c35):const Color(0xffefebe5),
+    surfaceContainer:night?const Color(0xff202730):const Color(0xffedf0f5),
+    surfaceContainerHigh:night?const Color(0xff252c35):const Color(0xffe7ebf2),
   );
 
   return ThemeData(
     useMaterial3:true,
+    pageTransitionsTheme:const PageTransitionsTheme(builders:{
+      TargetPlatform.android:CupertinoPageTransitionsBuilder(),
+      TargetPlatform.iOS:CupertinoPageTransitionsBuilder(),
+    }),
     brightness:brightness,
     colorScheme:scheme,
     scaffoldBackgroundColor:bg,
@@ -89,7 +93,7 @@ ThemeData mediaTheme(Brightness brightness) {
     ),
     inputDecorationTheme:InputDecorationTheme(
       filled:true,
-      fillColor:night?const Color(0xff242a32):const Color(0xfff2f0ed),
+      fillColor:night?const Color(0xff242a32):const Color(0xfff1f3f7),
       prefixIconColor:subtitle,
       hintStyle:TextStyle(color:subtitle,fontSize:13),
       contentPadding:const EdgeInsets.symmetric(
