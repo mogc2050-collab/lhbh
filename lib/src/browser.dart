@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'link_inspector.dart';
 import 'library.dart';
 import 'media_utils.dart';
 import 'player.dart';
@@ -47,6 +49,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xffffffff));
     item=_TabData(controller,url);
+    if(controller.platform is AndroidWebViewController){
+      (controller.platform as AndroidWebViewController)
+        .setMediaPlaybackRequiresUserGesture(false);
+    }
     controller.setNavigationDelegate(NavigationDelegate(
       onNavigationRequest:(request) {
         final uri=Uri.tryParse(request.url);
@@ -287,6 +293,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
           onTap:(){
             Navigator.pop(ctx);
             launchUrl(Uri.parse(tab.url),mode:LaunchMode.externalApplication);
+          }),
+        ListTile(leading:const Icon(Icons.content_paste_search_rounded),
+          title:const Text('حلّل رابط فيديو أو صوت'),
+          onTap:(){
+            Navigator.pop(ctx);
+            Navigator.of(context).push(MaterialPageRoute<void>(
+              builder:(_)=>SmartLinkScreen(
+                library:widget.library,music:widget.music,
+                browse:_go)));
           }),
         ListTile(leading:const Icon(Icons.file_download_outlined),
           title:const Text('تنزيل من رابط مباشر'),
