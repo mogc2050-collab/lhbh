@@ -46,6 +46,10 @@ class MainActivity: AudioServiceFragmentActivity() {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
         if(::deviceMedia.isInitialized)deviceMedia.handlePermissionResult(requestCode)
     }
+    override fun onDestroy(){
+        if(::deviceMedia.isInitialized)deviceMedia.dispose()
+        super.onDestroy()
+    }
     private fun shareLocal(path:String,name:String){
         val source=File(path).canonicalFile
         val root=dataDir.canonicalFile
