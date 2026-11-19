@@ -3,60 +3,48 @@ package com.ibetoo.ibetoo_media
 import android.Manifest
 import android.app.Activity
 import android.content.ContentUris
-import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Size
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
-/**
- * Android's indexed music/video library, not a fake imported-files list.
- * No MANAGE_EXTERNAL_STORAGE permission and no access to private app files.
- * Media queries are executed off the Android UI thread.
- */
+/** Android indexed media, artwork, duplicate checks and user-granted access. */
 class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMessenger) {
-    private val channel = MethodChannel(messenger, "ibetoo.media/device")
-    private val executor = Executors.newSingleThreadExecutor()
-    private var permissionReply: MethodChannel.Result? = null
-    private val permissionCode = 7231
+    private val channel=MethodChannel(messenger,"ibetoo.media/device")
+    private val executor=Executors.newSingleThreadExecutor()
+    private var pendingPermission: MethodChannel.Result?=null
+    private val requestCode=7231
 
-    init {
-        channel.setMethodCallHandler { call, result ->
-            when (call.method) {
+    init{
+        channel.setMethodCallHandler { call,result ->
+            when(call.method){
                 "permissions" -> result.success(permissionState())
                 "requestPermissions" -> requestPermissions(result)
-                "scan" -> {
-                    val kind = call.argument<String>("kind") ?: "audio"
-                    if (kind != "audio" && kind != "video") {
-                        result.error("BAD_KIND","Only audio/video media are supported",null)
-                    } else {
-                        executor.execute {
-                            try {
-                                val rows = scan(kind)
-                                Handler(Looper.getMainLooper()).post { result.success(rows) }
-                            } catch (e: Exception) {
-                                Handler(Looper.getMainLooper()).post {
-                                    result.error("SCAN_FAILED",e.message,null)
-                                }
-                            }
-                        }
-                    }
-                }
-                "audioCache" -> {
-                    val raw = call.argument<String>("uri") ?: ""
+                "scan","thumbnail","audioCache","duplicates" -> {
                     executor.execute {
-                        try {
-                            val path = cacheMedia(raw)
-                            Handler(Looper.getMainLooper()).post { result.success(path) }
-                        } catch(e: Exception) {
-                            Handler(Looper.getMainLooper()).post {
-                                result.error("COPY_FAILED",e.message,null)
+                        try{
+                            val value: Any = when(call.method){
+                                "scan" -> scan(call.argument<String>("kind") ?: "audio")
+                                "thumbnail" -> thumbnail(call.argument<String>("uri") ?: "")
+                                "audioCache" -> cacheMedia(call.argument<String>("uri") ?: "")
+                                else -> duplicates()
+                            }
+                            Handler(Looper.getMainLooper()).post{result.success(value)}
+                        }catch(e:Exception){
+                            Handler(Looper.getMainLooper()).post{
+                                result.error("DEVICE_MEDIA",e.message,e.javaClass.simpleName)
                             }
                         }
                     }
@@ -65,150 +53,207 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
             }
         }
     }
-
-    private fun requiredPermissions(): Array<String> {
-        return if (Build.VERSION.SDK_INT >= 34) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-                Manifest.permission.POST_NOTIFICATIONS)
-        } else if (Build.VERSION.SDK_INT >= 33) {
-            arrayOf(Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
+    private fun requiredPermissions():Array<String> {
+        if(Build.VERSION.SDK_INT>=34)return arrayOf(
+            Manifest.permission.READ_MEDIA_AUDIO,
+            Manifest.permission.READ_MEDIA_VIDEO,
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            Manifest.permission.POST_NOTIFICATIONS)
+        if(Build.VERSION.SDK_INT>=33)return arrayOf(
+            Manifest.permission.READ_MEDIA_AUDIO,
+            Manifest.permission.READ_MEDIA_VIDEO,
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.POST_NOTIFICATIONS)
+        return arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
     }
-
-    private fun permissionState(): Map<String,Boolean> {
-        fun granted(name: String): Boolean =
-            activity.checkSelfPermission(name)==PackageManager.PERMISSION_GRANTED
-        return if (Build.VERSION.SDK_INT >= 33) {
-            val selectedVideos=Build.VERSION.SDK_INT >= 34 &&
+    private fun granted(name:String)=activity.checkSelfPermission(name)==
+        PackageManager.PERMISSION_GRANTED
+    private fun permissionState():Map<String,Boolean>{
+        if(Build.VERSION.SDK_INT>=33){
+            val selected=Build.VERSION.SDK_INT>=34 &&
                 granted(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-            mapOf("audio" to granted(Manifest.permission.READ_MEDIA_AUDIO),
-                "video" to (granted(Manifest.permission.READ_MEDIA_VIDEO) || selectedVideos),
+            return mapOf(
+                "audio" to granted(Manifest.permission.READ_MEDIA_AUDIO),
+                "video" to (granted(Manifest.permission.READ_MEDIA_VIDEO)||selected),
+                "image" to (granted(Manifest.permission.READ_MEDIA_IMAGES)||selected),
                 "notifications" to granted(Manifest.permission.POST_NOTIFICATIONS))
-        } else {
-            val media = granted(Manifest.permission.READ_EXTERNAL_STORAGE)
-            mapOf("audio" to media,"video" to media,"notifications" to true)
         }
+        val media=granted(Manifest.permission.READ_EXTERNAL_STORAGE)
+        return mapOf("audio" to media,"video" to media,"image" to media,
+            "notifications" to true)
     }
-
-    private fun requestPermissions(result: MethodChannel.Result) {
-        if (permissionReply != null) {
-            result.error("BUSY","Another permission request is in progress",null)
-            return
+    private fun requestPermissions(result:MethodChannel.Result){
+        if(pendingPermission!=null){
+            result.error("BUSY","Permission request already running",null);return
         }
-        val missing = requiredPermissions().filter {
-            activity.checkSelfPermission(it)!=PackageManager.PERMISSION_GRANTED
-        }
-        if (missing.isEmpty()) {
-            result.success(permissionState())
-            return
-        }
-        permissionReply = result
-        activity.requestPermissions(missing.toTypedArray(),permissionCode)
+        val pending=requiredPermissions().filter{!granted(it)}
+        if(pending.isEmpty()){result.success(permissionState());return}
+        pendingPermission=result
+        activity.requestPermissions(pending.toTypedArray(),requestCode)
     }
-
-    fun handlePermissionResult(requestCode: Int): Boolean {
-        if (requestCode != permissionCode) return false
-        permissionReply?.success(permissionState())
-        permissionReply=null
+    fun handlePermissionResult(code:Int):Boolean {
+        if(code!=requestCode)return false
+        pendingPermission?.success(permissionState())
+        pendingPermission=null
         return true
     }
 
-    private fun scan(kind: String): List<Map<String, Any>> {
-        val permission = permissionState()[kind] ?: false
-        if (!permission) return emptyList()
-        val audio = kind=="audio"
-        val collection = if (audio) MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        val idColumn = MediaStore.MediaColumns._ID
-        val titleColumn = MediaStore.MediaColumns.DISPLAY_NAME
-        val projection = arrayOf(
-            idColumn,titleColumn,MediaStore.MediaColumns.SIZE,
-            MediaStore.MediaColumns.DATE_ADDED,MediaStore.MediaColumns.MIME_TYPE,
-            if (audio) MediaStore.Audio.Media.DURATION else MediaStore.Video.Media.DURATION
-        )
-        val order = MediaStore.MediaColumns.DATE_ADDED + " DESC"
-        val results = ArrayList<Map<String, Any>>()
-        val cursor = activity.contentResolver.query(
-            collection,projection,null,null,order) ?: return results
-        cursor.use { c ->
-            val idPos=c.getColumnIndexOrThrow(idColumn)
-            val titlePos=c.getColumnIndexOrThrow(titleColumn)
-            val sizePos=c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-            val datePos=c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
-            val mimePos=c.getColumnIndexOrThrow(MediaStore.MediaColumns.MIME_TYPE)
-            val durationPos=c.getColumnIndexOrThrow(
-                if (audio) MediaStore.Audio.Media.DURATION else MediaStore.Video.Media.DURATION)
-            while (c.moveToNext() && results.size<5000) {
-                val id=c.getLong(idPos)
-                val name=c.getString(titlePos) ?: "media"
-                val uri=ContentUris.withAppendedId(collection,id)
-                results.add(mapOf(
+    private fun collection(kind:String):Uri=when(kind){
+        "audio" -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        else -> throw IllegalArgumentException("Only indexed audio/video/images")
+    }
+    private fun scan(kind:String):List<Map<String,Any>>{
+        if(permissionState()[kind]!=true)return emptyList()
+        val coll=collection(kind)
+        val cols=mutableListOf(
+            MediaStore.MediaColumns._ID,MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE,MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.MIME_TYPE)
+        if(Build.VERSION.SDK_INT>=29)cols.add(MediaStore.MediaColumns.RELATIVE_PATH)
+        if(kind=="audio"){
+            cols.add(MediaStore.Audio.Media.DURATION)
+            cols.add(MediaStore.Audio.Media.ARTIST)
+            cols.add(MediaStore.Audio.Media.ALBUM)
+            cols.add(MediaStore.Audio.Media.ALBUM_ID)
+        } else if(kind=="video"){
+            cols.add(MediaStore.Video.Media.DURATION)
+        }
+        val records=ArrayList<Map<String,Any>>()
+        val cur=activity.contentResolver.query(coll,cols.toTypedArray(),null,null,
+            MediaStore.MediaColumns.DATE_ADDED+" DESC") ?: return records
+        cur.use{c->
+            fun text(name:String):String{
+                val index=c.getColumnIndex(name)
+                return if(index<0||c.isNull(index))"" else c.getString(index)?:""
+            }
+            fun number(name:String):Long{
+                val index=c.getColumnIndex(name)
+                return if(index<0||c.isNull(index))0L else c.getLong(index)
+            }
+            while(c.moveToNext()&&records.size<10000){
+                val id=number(MediaStore.MediaColumns._ID)
+                records.add(mapOf(
                     "id" to id,
-                    "uri" to uri.toString(),
-                    "name" to name,
+                    "uri" to ContentUris.withAppendedId(coll,id).toString(),
+                    "name" to text(MediaStore.MediaColumns.DISPLAY_NAME),
                     "kind" to kind,
-                    "size" to c.getLong(sizePos),
-                    "date" to c.getLong(datePos),
-                    "duration" to c.getLong(durationPos),
-                    "mime" to (c.getString(mimePos) ?: "")
+                    "size" to number(MediaStore.MediaColumns.SIZE),
+                    "date" to number(MediaStore.MediaColumns.DATE_ADDED),
+                    "mime" to text(MediaStore.MediaColumns.MIME_TYPE),
+                    "folder" to if(Build.VERSION.SDK_INT>=29)
+                        text(MediaStore.MediaColumns.RELATIVE_PATH) else "",
+                    "artist" to if(kind=="audio")text(MediaStore.Audio.Media.ARTIST) else "",
+                    "album" to if(kind=="audio")text(MediaStore.Audio.Media.ALBUM) else "",
+                    "albumId" to if(kind=="audio")number(MediaStore.Audio.Media.ALBUM_ID) else 0L,
+                    "duration" to when(kind){
+                        "audio" -> number(MediaStore.Audio.Media.DURATION)
+                        "video" -> number(MediaStore.Video.Media.DURATION)
+                        else -> 0L
+                    }
                 ))
             }
         }
-        return results
+        return records
     }
 
-    /**
-     * For just_audio implementations which don't accept SAF content:// URIs,
-     * copy only the current track into the app-owned cache. Never preload
-     * the entire music library. Limit the copy size to avoid filling storage.
-     */
-    private fun cacheMedia(raw: String): String {
+    private fun checkedUri(raw:String):Uri{
         val uri=Uri.parse(raw)
-        if (uri.scheme!="content" ||
-            uri.authority != MediaStore.AUTHORITY) {
-            throw IllegalArgumentException("Only indexed MediaStore URIs allowed")
+        if(uri.scheme!="content"||uri.authority!=MediaStore.AUTHORITY)
+            throw IllegalArgumentException("Not an Android MediaStore URI")
+        return uri
+    }
+    private fun thumbnail(raw:String):ByteArray {
+        val uri=checkedUri(raw)
+        val bitmap:Bitmap?=try{
+            if(Build.VERSION.SDK_INT>=29){
+                activity.contentResolver.loadThumbnail(uri,Size(192,192),null)
+            }else{
+                val retriever=MediaMetadataRetriever()
+                try{
+                    retriever.setDataSource(activity,uri)
+                    val embedded=retriever.embeddedPicture
+                    if(embedded!=null)BitmapFactory.decodeByteArray(
+                        embedded,0,embedded.size) else retriever.frameAtTime
+                }finally{retriever.release()}
+            }
+        }catch(_:Exception){null}
+        val out=ByteArrayOutputStream()
+        bitmap?.compress(Bitmap.CompressFormat.JPEG,78,out)
+        return out.toByteArray()
+    }
+    private fun cacheMedia(raw:String):String {
+        val uri=checkedUri(raw)
+        val mime=activity.contentResolver.getType(uri)?:""
+        val ext=when{
+            mime.contains("mpeg")->".mp3"
+            mime.contains("mp4")->".m4a"
+            mime.contains("ogg")->".ogg"
+            mime.contains("flac")->".flac"
+            mime.startsWith("video/")->".mp4"
+            else->".m4a"
         }
-        val id=uri.lastPathSegment ?: throw IllegalArgumentException("Missing media ID")
-        val mime=activity.contentResolver.getType(uri) ?: ""
-        val ext=when {
-            mime.contains("mpeg") -> ".mp3"
-            mime.contains("mp4") -> ".m4a"
-            mime.contains("aac") -> ".aac"
-            mime.contains("ogg") -> ".ogg"
-            mime.contains("flac") -> ".flac"
-            mime.contains("wav") -> ".wav"
-            mime.startsWith("video/") -> ".mp4"
-            else -> ".mp3"
-        }
-        val target=File(activity.cacheDir,"ibetoo_track_" + id + ext)
-        if(target.isFile && target.length()>0) return target.absolutePath
-        val maxBytes=180L*1024*1024
-        val source=activity.contentResolver.openInputStream(uri)
-            ?: throw IllegalStateException("File no longer accessible")
-        source.use { input ->
-            target.outputStream().use { out ->
-                val buffer=ByteArray(65536)
-                var bytes=0L
-                while(true) {
-                    val n=input.read(buffer)
-                    if(n<0)break
-                    bytes+=n
-                    if(bytes>maxBytes) {
-                        target.delete()
-                        throw IllegalArgumentException("Media exceeds the 180 MB audio-cache limit")
+        val id=uri.lastPathSegment?:"unknown"
+        val target=File(activity.cacheDir,"ibetoo_current_"+id+ext)
+        if(target.isFile&&target.length()>0)return target.absolutePath
+        val limit=512L*1024*1024
+        try{
+            (activity.contentResolver.openInputStream(uri)
+                ?:throw IllegalArgumentException("Media unavailable")).use{input->
+                target.outputStream().use{output->
+                    val bytes=ByteArray(65536)
+                    var size=0L
+                    while(true){
+                        val count=input.read(bytes)
+                        if(count<0)break
+                        size+=count
+                        if(size>limit)throw IllegalArgumentException("File exceeds cache limit")
+                        output.write(bytes,0,count)
                     }
-                    out.write(buffer,0,n)
                 }
             }
-        }
+        }catch(e:Exception){target.delete();throw e}
         return target.absolutePath
     }
 
-    fun dispose() { executor.shutdown() }
+    /** First compare exact sizes, then stream SHA-256; never delete anything. */
+    private fun duplicates():List<Map<String,Any>>{
+        val candidates=mutableMapOf<Long,MutableList<String>>()
+        for(kind in listOf("audio","video","image")){
+            if(permissionState()[kind]!=true)continue
+            for(row in scan(kind)){
+                val size=row["size"] as Long
+                if(size<=0L||size>512L*1024*1024)continue
+                candidates.getOrPut(size){mutableListOf()}.add(row["uri"] as String)
+            }
+        }
+        val results=mutableMapOf<String,MutableList<String>>()
+        var inspected=0
+        for(group in candidates.values.filter{it.size>1}){
+            for(raw in group){
+                if(inspected++>400)break
+                try{
+                    val digest=MessageDigest.getInstance("SHA-256")
+                    activity.contentResolver.openInputStream(checkedUri(raw))?.use{input->
+                        val buffer=ByteArray(65536)
+                        while(true){
+                            val n=input.read(buffer)
+                            if(n<0)break
+                            digest.update(buffer,0,n)
+                        }
+                        val hash=digest.digest().joinToString("") {
+                            "%02x".format(it.toInt() and 0xff)
+                        }
+                        results.getOrPut(hash){mutableListOf()}.add(raw)
+                    }
+                }catch(_:Exception){}
+            }
+        }
+        return results.values.filter{it.size>1}.map{
+            mapOf("uris" to it)
+        }
+    }
+    fun dispose(){executor.shutdown()}
 }
