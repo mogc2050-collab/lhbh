@@ -67,6 +67,24 @@ https://github.com/mogc2050-collab/lhbh
 
 وجود الإصلاح على GitHub لا يساوي نجاح بناء APK؛ يلزم أن تصل المحاولة الجديدة إلى خطوة `Test actual installation and app launch` بنجاح.
 
+## معالجة أخطاء Maven Central المؤقتة (HTTP 429 / 5xx)
+
+تم فحص سجل تشغيل GitHub Actions رقم `44524028047`، والذي أثبت أن `repo.maven.apache.org` أعاد **429 Too Many Requests** أثناء حل اعتماديات `org.jetbrains.kotlin:kotlin-gradle-plugins-bom:2.2.20`. الفشل كان في تنزيل مكتبات Gradle، وليس في `flutter analyze` أو اختبارات Flutter.
+
+تم تعديل `.github/workflows/build-apk.yml` كالتالي:
+
+1. **Gradle Cache رسمي** عبر `gradle/actions/setup-gradle@v4` بعد `flutter create` و`scripts/customize_android.py` (لأن `android/` وGradle Wrapper يتم إنشاؤهما داخل الـWorkflow). يحفظ الاعتماديات والـWrapper لتقليل التنزيلات مستقبلًا، عندما يكون الكاش متاحًا.
+2. **إعادة محاولة محدودة** في `scripts/build_apk_retry.sh`: ثلاث محاولات كحد أقصى؛ انتظار 30 ثم 90 ثانية. المحاولة لا تتكرر إلا بعد تشخيص 429 أو 5xx أو timeout أو فشل اتصال عابر في سجل المحاولة الحالية.
+3. **عدم إعادة أخطاء الكود**: تحليل Dart والاختبارات منفصلان، وأي خطأ compilation أو manifest أو signing لا يؤدي إلى إعادة بناء تلقائية.
+4. **صحة النتيجة مع `tee`**: يتم حفظ `PIPESTATUS` فور تنفيذ `flutter build apk 2>&1 | tee ...`، والتحقق من رمز خروج Flutter ورمز خروج `tee` والوجود الفعلي لملف APK.
+5. **اختبارات سياسة المحاولة**: خطوة `scripts/test_build_apk_retry.sh` تحاكي 429 و503 وأخطاء الكود والتوقيع ونفاد المحاولات بدون اتصال بالشبكة أو استهلاك وقت انتظار حقيقي.
+6. **لم تتغير الإصدارات**: Flutter `3.50.0`، Java `21` وGradle Wrapper الذي ينشئه `flutter create`. التوقيع والتحقق ومحاكي Android كما كانوا، والبناء من Actions يدويًا فقط.
+
+### اختبار التعديل
+افتح GitHub Actions ← **Build iBetoo Media APK - Manual Only** ← **Run workflow** على `main` (تشغيل جديد، وليس إعادة تشغيل فشل قديم). راقب نجاح **Test retry policy offline** ثم **Analyze source** و**Run media app unit tests**، وبعدها **Build universal signed APK with bounded network-only retries**، ثم **Verify signature** و**Test actual installation and app launch**.
+
+إذا استمرت مشكلة 429 في أول تشغيل لأن الكاش ما زال فارغًا، قد يظل البناء يفشل رغم المحاولات؛ هذا حد على خادم الاعتماديات ولا يضمن الكاش حله فورًا. نجاح بناء APK والتثبيت لا يُعلن إلا بعد اكتمال خطواته بالفعل.
+
 ## حالة التحقق
 
 هذه الملفات مكتوبة ومراجعة لكن **لم يُشغّل Flutter/Android SDK في بيئة التأليف**؛ تجميع APK الحقيقي واختبار المحاكي يحدث فقط عندما تشغّل Actions بنفسك. أي فشل ظاهر في التحليل/البناء يستلزم إصلاح الكود قبل القول إن التطبيق جاهز.
