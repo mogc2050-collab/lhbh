@@ -245,10 +245,14 @@ class AudioDetail extends StatelessWidget {
 
 class VideoDetail extends StatefulWidget {
   const VideoDetail({super.key,required this.source,
-    required this.title,this.network=false});
+    required this.title,this.network=false,
+    this.music,this.playlist=const [],this.startIndex=0});
   final String source;
   final String title;
   final bool network;
+  final BackgroundMusic? music;
+  final List<MediaTrack> playlist;
+  final int startIndex;
   @override
   State<VideoDetail> createState()=>_VideoDetailState();
 }
@@ -256,22 +260,54 @@ class VideoDetail extends StatefulWidget {
 class _VideoDetailState extends State<VideoDetail> {
   VideoPlayerController? controller;
   Object? failure;
-  bool loading=true;
+  bool loading=true,changing=false;
+  late int index;
+  late String currentSource,currentTitle;
 
   @override
   void initState(){
     super.initState();
+    index=widget.startIndex;
+    currentSource=widget.source;
+    currentTitle=widget.title;
     _init();
+  }
+  void _onVideoChanged() {
+    final p=controller;
+    if(p==null||changing||loading||!p.value.isInitialized)return;
+    if(widget.playlist.isNotEmpty&&index+1<widget.playlist.length&&
+        p.value.duration>Duration.zero&&
+        p.value.position>=p.value.duration&&
+        !p.value.isPlaying) {
+      _nextVideo();
+    }
+  }
+  Future<void> _nextVideo() async {
+    if(changing||index+1>=widget.playlist.length)return;
+    changing=true;
+    final old=controller;
+    old?.removeListener(_onVideoChanged);
+    controller=null;
+    if(mounted)setState(()=>loading=true);
+    await old?.dispose();
+    index++;
+    currentSource=widget.playlist[index].source;
+    currentTitle=widget.playlist[index].title;
+    changing=false;
+    await _init();
   }
   Future<void> _init() async {
     VideoPlayerController? video;
     try {
-      video=widget.network ?
-        VideoPlayerController.networkUrl(Uri.parse(widget.source)) :
-        VideoPlayerController.file(File(widget.source));
+      video=currentSource.startsWith('content://') ?
+        VideoPlayerController.contentUri(Uri.parse(currentSource)) :
+        (widget.network||currentSource.startsWith('https://')) ?
+        VideoPlayerController.networkUrl(Uri.parse(currentSource)) :
+        VideoPlayerController.file(File(currentSource));
       await video.initialize();
       if(!mounted){await video.dispose();return;}
       controller=video;
+      video.addListener(_onVideoChanged);
       await video.setLooping(false);
       unawaited(video.play());
       setState(()=>loading=false);
@@ -284,14 +320,32 @@ class _VideoDetailState extends State<VideoDetail> {
     }
   }
   @override
-  void dispose(){controller?.dispose();super.dispose();}
+  void dispose(){
+    controller?.removeListener(_onVideoChanged);
+    controller?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final video=controller;
     return Scaffold(
-      appBar:AppBar(title:Text(widget.title,maxLines:1),
+      appBar:AppBar(title:Text(currentTitle,maxLines:1),
         actions:[
+          if(video!=null&&widget.music!=null)
+            IconButton(
+              tooltip:'استمر في الاستماع والشاشة مقفولة',
+              icon:const Icon(Icons.headphones_rounded),
+              onPressed:() async {
+                try{
+                  await video.pause();
+                  await widget.music!.open(currentSource,title:currentTitle);
+                  if(context.mounted)Navigator.of(context).pop();
+                }catch(e){
+                  if(context.mounted)ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content:Text('تعذر تشغيل صوت الفيديو في الخلفية: $e')));
+                }
+              }),
           if(video!=null)IconButton(
             tooltip:'صورة داخل صورة',
             icon:const Icon(Icons.picture_in_picture_alt_rounded),
@@ -339,6 +393,10 @@ class _VideoDetailState extends State<VideoDetail> {
               IconButton(onPressed:()=>video.seekTo(
                 video.value.position+const Duration(seconds:10)),
                 icon:const Icon(Icons.forward_10)),
+              if(widget.playlist.isNotEmpty)IconButton(
+                onPressed:index+1<widget.playlist.length?_nextVideo:null,
+                tooltip:'الفيديو التالي',
+                icon:const Icon(Icons.skip_next_rounded)),
             ]),
           ])),
         ]),
