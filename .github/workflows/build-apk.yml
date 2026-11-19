@@ -71,6 +71,22 @@ jobs:
 
       # Flutter creates android/ during this workflow, so install Gradle
       # caching only AFTER the wrapper and Android project have been generated.
+      - name: Validate generated media permissions and native player bridges
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=android/app/src/main/AndroidManifest.xml
+          native=android/app/src/main/kotlin/com/ibetoo/ibetoo_media
+          test -s "$native/MainActivity.kt"
+          test -s "$native/DeviceMediaBridge.kt"
+          grep -q 'READ_MEDIA_AUDIO' "$manifest"
+          grep -q 'READ_MEDIA_VIDEO' "$manifest"
+          grep -q 'POST_NOTIFICATIONS' "$manifest"
+          grep -q 'DeviceMediaBridge(this' "$native/MainActivity.kt"
+          grep -q 'MediaStore.Audio.Media' "$native/DeviceMediaBridge.kt"
+          grep -q 'MediaStore.Video.Media' "$native/DeviceMediaBridge.kt"
+          echo 'MediaStore catalog, playback service, and permission bridge generated.'
+
       - name: Restore and persist Gradle wrapper and Maven dependencies
         uses: gradle/actions/setup-gradle@v4
         with:
