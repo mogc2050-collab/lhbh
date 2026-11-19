@@ -88,7 +88,7 @@ class BackgroundMusic extends ChangeNotifier {
       _sleepTimer=Timer.periodic(const Duration(seconds:1),(timer){
         remaining--;
         if(remaining<=10 && remaining>0){
-          unawaited(player.setVolume((remaining/10).clamp(0.0,1.0)));
+          unawaited(player.setVolume((remaining/10).clamp(0.0,1.0).toDouble()));
         }
         if(remaining<=0){
           timer.cancel();
