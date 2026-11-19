@@ -86,10 +86,14 @@ class PhoneLibrary extends ChangeNotifier {
       ]){
         entry.$2.clear();
         if(!entry.$3)continue;
-        final rows=await channel.invokeMethod<List<dynamic>>(
-          'scan',{'kind':entry.$1});
-        entry.$2.addAll((rows??[]).whereType<Map>().map((x)=>
-          PhoneMedia.fromJson(Map<String,dynamic>.from(x))));
+        try{
+          final rows=await channel.invokeMethod<List<dynamic>>(
+            'scan',{'kind':entry.$1});
+          entry.$2.addAll((rows??[]).whereType<Map>().map((x)=>
+            PhoneMedia.fromJson(Map<String,dynamic>.from(x))));
+        }catch(e){
+          error='بعض الوسائط تعذّر فهرستها: $e';
+        }
       }
     }on PlatformException catch(e){error=e.message??e.code;}
     catch(e){error='فشل فهرسة الوسائط: $e';}
