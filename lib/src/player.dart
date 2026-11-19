@@ -8,6 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:video_player/video_player.dart';
 import 'library.dart';
+import 'platform_bridge.dart';
+import 'captions.dart';
+import 'package:file_picker/file_picker.dart';
 import 'media_utils.dart';
 import 'theme.dart';
 
@@ -18,7 +21,75 @@ class MediaTrack {
 }
 
 class BackgroundMusic extends ChangeNotifier {
-  final player=AudioPlayer();
+  BackgroundMusic({this.library}){
+    _completed=player.playerStateStream.listen((state){
+      if(state.processingState==ProcessingState.completed && !_changing){
+        unawaited(next());
+      }
+      notifyListeners();
+    });
+    _positionSub=player.positionStream.listen((position){
+      final uri=currentPath;
+      if(uri==null)return;
+      if(position.inSeconds!=_savedSecond && position.inSeconds%8==0){
+        _savedSecond=position.inSeconds;
+        library?.saveResume(uri,position);
+      }
+    });
+    if(library!=null)unawaited(player.setSpeed(library!.musicSpeed));
+    _initEq();
+  }
+  final MediaLibrary? library;
+  final equalizer=AndroidEqualizer();
+  late final AudioPlayer player=AudioPlayer(
+    audioPipeline:AudioPipeline(androidAudioEffects:[equalizer]));
+  StreamSubscription<Duration>? _positionSub;
+  Timer? _sleepTimer;
+  int _savedSecond=-1;
+  Future<void> _initEq() async{
+    if(library!=null){
+      try{await setEqualizer(library!.eqPreset);}catch(_){}
+    }
+  }
+  Future<void> setEqualizer(String preset) async{
+    final values=<String,List<double>>{
+      'طبيعي':[0,0,0,0,0],
+      'Bass':[7,5,2,-1,-2],
+      'Rock':[5,3,-2,3,5],
+      'صوت بشري':[-3,-1,4,4,1],
+      'Cinema':[5,2,1,3,5],
+    };
+    final gains=values[preset]??values['طبيعي']!;
+    await equalizer.setEnabled(preset!='طبيعي');
+    if(preset!='طبيعي'){
+      final params=await equalizer.parameters;
+      for(var i=0;i<params.bands.length;i++){
+        final position=(i*gains.length/params.bands.length).floor()
+          .clamp(0,gains.length-1);
+        final gain=gains[position].clamp(params.minDecibels,params.maxDecibels);
+        await params.bands[i].setGain(gain);
+      }
+    }
+    library?.setEqualizer(preset);
+    notifyListeners();
+  }
+  void setSleepTimer(int minutes){
+    _sleepTimer?.cancel();
+    library?.setSleepMinutes(minutes);
+    if(minutes>0){
+      _sleepTimer=Timer(Duration(minutes:minutes),(){
+        unawaited(player.pause());
+        library?.setSleepMinutes(0);
+        notifyListeners();
+      });
+    }
+    notifyListeners();
+  }
+  Future<void> setSpeed(double speed) async{
+    await player.setSpeed(speed);
+    library?.setMusicSpeed(speed);
+    notifyListeners();
+  }
   String? currentTitle;
   String? currentPath;
   List<MediaTrack> queue=[];
@@ -28,15 +99,6 @@ class BackgroundMusic extends ChangeNotifier {
   bool _changing=false;
   late final StreamSubscription<PlayerState> _completed;
   final _random=Random();
-
-  BackgroundMusic(){
-    _completed=player.playerStateStream.listen((state){
-      if(state.processingState==ProcessingState.completed && !_changing){
-        unawaited(next());
-      }
-      notifyListeners();
-    });
-  }
 
   Future<void> open(String path,{String? title}) async {
     await playQueue([MediaTrack(source:path,
@@ -73,6 +135,12 @@ class BackgroundMusic extends ChangeNotifier {
         await player.setAudioSource(sourceFor(copied));
       }
       queueIndex=index;
+      library?.recordPlay(track.source);
+      final resume=library?.positionFor(track.source)??Duration.zero;
+      if(resume>const Duration(seconds:5) &&
+        resume<((player.duration??Duration.zero)-const Duration(seconds:8))){
+        await player.seek(resume);
+      }
       currentTitle=track.title;
       currentPath=track.source;
       notifyListeners();
@@ -123,6 +191,8 @@ class BackgroundMusic extends ChangeNotifier {
 
   @override
   void dispose(){
+    _sleepTimer?.cancel();
+    unawaited(_positionSub?.cancel());
     unawaited(_completed.cancel());
     unawaited(player.dispose());
     super.dispose();
@@ -262,11 +332,12 @@ class AudioDetail extends StatelessWidget {
 class VideoDetail extends StatefulWidget {
   const VideoDetail({super.key,required this.source,
     required this.title,this.network=false,
-    this.music,this.playlist=const [],this.startIndex=0});
+    this.music,this.playlist=const [],this.startIndex=0,this.library});
   final String source;
   final String title;
   final bool network;
   final BackgroundMusic? music;
+  final MediaLibrary? library;
   final List<MediaTrack> playlist;
   final int startIndex;
   @override
@@ -277,6 +348,11 @@ class _VideoDetailState extends State<VideoDetail> {
   VideoPlayerController? controller;
   Object? failure;
   bool loading=true,changing=false,fullscreen=false;
+  bool locked=false;
+  double brightness=.65;
+  List<CaptionCue> cues=[];
+  Duration subtitleOffset=Duration.zero;
+  DateTime? _lastSave;
   late int index;
   late String currentSource,currentTitle;
 
@@ -291,6 +367,12 @@ class _VideoDetailState extends State<VideoDetail> {
   void _onVideoChanged() {
     final p=controller;
     if(p==null||changing||loading||!p.value.isInitialized)return;
+    final now=DateTime.now();
+    if(widget.library!=null && (_lastSave==null ||
+        now.difference(_lastSave!).inSeconds>=8)){
+      _lastSave=now;
+      widget.library!.saveResume(currentSource,p.value.position);
+    }
     if(widget.playlist.isNotEmpty&&index+1<widget.playlist.length&&
         p.value.duration>Duration.zero&&
         p.value.position>=p.value.duration&&
@@ -325,6 +407,13 @@ class _VideoDetailState extends State<VideoDetail> {
       controller=video;
       video.addListener(_onVideoChanged);
       await video.setLooping(false);
+      await video.setPlaybackSpeed(widget.library?.videoSpeed??1.0);
+      final resume=widget.library?.positionFor(currentSource)??Duration.zero;
+      if(resume>const Duration(seconds:5)&&
+          resume<video.value.duration-const Duration(seconds:8)){
+        await video.seekTo(resume);
+      }
+      widget.library?.recordPlay(currentSource);
       unawaited(video.play());
       setState(()=>loading=false);
     } catch(e) {
@@ -335,6 +424,50 @@ class _VideoDetailState extends State<VideoDetail> {
       });
     }
   }
+  Future<void> _pickSubtitle() async{
+    final files=await FilePicker.pickFiles(type:FileType.custom,
+      allowedExtensions:['srt','vtt']);
+    if(files.isEmpty||files.first.path==null)return;
+    try{
+      cues=await Captions.fromFile(files.first.path!);
+      if(mounted)setState((){});
+    }catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content:Text('تعذر فتح ملف الترجمة: $e')));}
+  }
+  Future<void> _changeSpeed() async{
+    final value=await showModalBottomSheet<double>(context:context,
+      builder:(ctx)=>SafeArea(child:Column(
+        mainAxisSize:MainAxisSize.min,children:[
+          for(final speed in [.5,.75,1.0,1.25,1.5,1.75,2.0,3.0])
+            ListTile(title:Text('${speed}×'),
+              onTap:()=>Navigator.pop(ctx,speed)),
+        ])));
+    if(value!=null&&controller!=null){
+      await controller!.setPlaybackSpeed(value);
+      widget.library?.setVideoSpeed(value);
+      if(mounted)setState((){});
+    }
+  }
+  void _gesture(DragUpdateDetails update,Size size){
+    if(locked||controller==null)return;
+    if(update.delta.dx.abs()>update.delta.dy.abs()){
+      final total=controller!.value.duration.inMilliseconds;
+      final target=controller!.value.position.inMilliseconds+
+        (update.delta.dx*total/size.width).round();
+      controller!.seekTo(Duration(milliseconds:target.clamp(0,total)));
+    }else{
+      if(update.localPosition.dx<size.width/2){
+        brightness=(brightness-update.delta.dy/size.height)
+          .clamp(.12,1.0);
+      }else{
+        final next=(controller!.value.volume-update.delta.dy/size.height)
+          .clamp(0.0,1.0);
+        controller!.setVolume(next);
+      }
+      setState((){});
+    }
+  }
+
   Future<void> _toggleFullscreen() async {
     fullscreen=!fullscreen;
     await SystemChrome.setPreferredOrientations(
@@ -360,6 +493,17 @@ class _VideoDetailState extends State<VideoDetail> {
     return Scaffold(
       appBar:AppBar(title:Text(currentTitle,maxLines:1),
         actions:[
+          if(video!=null)IconButton(
+            tooltip:'قفل لمس الشاشة',
+            icon:Icon(locked?Icons.lock:Icons.lock_open),
+            onPressed:()=>setState(()=>locked=!locked)),
+          if(video!=null)IconButton(
+            tooltip:'سرعة التشغيل',icon:const Icon(Icons.speed),
+            onPressed:_changeSpeed),
+          if(video!=null)IconButton(
+            tooltip:'إضافة ترجمة SRT أو VTT',
+            icon:const Icon(Icons.closed_caption),
+            onPressed:_pickSubtitle),
           if(video!=null)IconButton(
             tooltip:fullscreen?'عودة للوضع الرأسي':'ملء الشاشة',
             icon:Icon(fullscreen?Icons.fullscreen_exit:Icons.fullscreen),
@@ -387,7 +531,7 @@ class _VideoDetailState extends State<VideoDetail> {
             icon:const Icon(Icons.picture_in_picture_alt_rounded),
             onPressed:() async {
               try {
-                final ok=await DownloadBridge.enterPip();
+                final ok=await PlatformMediaBridge.enterPip();
                 if(!ok && context.mounted){
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content:Text('الصورة داخل صورة غير متاحة على هذا الجهاز.')));
@@ -404,10 +548,40 @@ class _VideoDetailState extends State<VideoDetail> {
           child:Text('تعذر تشغيل هذا الترميز أو الملف: $failure',
             textAlign:TextAlign.center))) :
         Column(children:[
-          Expanded(child:Center(child:AspectRatio(
-            aspectRatio:video!.value.aspectRatio,
-            child:VideoPlayer(video)))),
-          Padding(padding:const EdgeInsets.all(12),child:Column(children:[
+          Expanded(child:LayoutBuilder(builder:(ctx,limits)=>
+            GestureDetector(
+              onPanUpdate:(e)=>_gesture(e,limits.biggest),
+              onDoubleTapDown:(e){
+                if(locked)return;
+                final jump=e.localPosition.dx<limits.maxWidth/2?-10:10;
+                final target=video!.value.position+Duration(seconds:jump);
+                video.seekTo(target<Duration.zero?Duration.zero:target);
+              },
+              child:Stack(children:[
+                Center(child:AspectRatio(
+                  aspectRatio:video!.value.aspectRatio,
+                  child:VideoPlayer(video))),
+                if(brightness<.99)IgnorePointer(child:Container(
+                  color:Colors.black.withValues(alpha:(1-brightness)*.65))),
+                if(cues.isNotEmpty)Positioned(
+                  bottom:30,left:12,right:12,
+                  child:AnimatedBuilder(animation:video,builder:(ctx,_){
+                    final text=Captions.at(cues,video.value.position,
+                      offset:subtitleOffset);
+                    return text.isEmpty?const SizedBox.shrink():
+                      Container(
+                        color:Colors.black54,
+                        padding:const EdgeInsets.all(5),
+                        child:Text(text,textAlign:TextAlign.center,
+                          style:TextStyle(color:Colors.white,
+                            fontSize:widget.library?.subtitleSize??18)));
+                  })),
+                if(locked)const Positioned(top:16,right:16,
+                  child:Icon(Icons.lock,color:Colors.white)),
+              ]),
+            ))),
+          if(!locked)Padding(padding:const EdgeInsets.all(12),
+            child:Column(children:[
             AnimatedBuilder(animation:video,builder:(context,_) {
               final dur=video.value.duration.inMilliseconds;
               final pos=video.value.position.inMilliseconds;
