@@ -220,6 +220,18 @@ class BackgroundMusic extends ChangeNotifier {
     }else{unawaited(player.play());}
     notifyListeners();
   }
+  Future<void> dismissPlayback() async {
+    _changing=true;
+    try {
+      await player.stop();
+      currentTitle=null;
+      currentPath=null;
+      queue.clear();
+      notifyListeners();
+    } finally {
+      _changing=false;
+    }
+  }
   void toggleShuffle(){shuffle=!shuffle;notifyListeners();}
   void toggleRepeat(){repeatOne=!repeatOne;notifyListeners();}
 
@@ -672,9 +684,14 @@ class _VideoDetailState extends State<VideoDetail> {
                 video.seekTo(target<Duration.zero?Duration.zero:target);
               },
               child:Stack(children:[
-                Center(child:AspectRatio(
-                  aspectRatio:video.value.aspectRatio,
-                  child:VideoPlayer(video))),
+                Center(child:ClipRect(child:FittedBox(
+                   fit:BoxFit.contain,
+                   child:SizedBox(
+                     width:video.value.size.width>0?
+                       video.value.size.width:320,
+                     height:video.value.size.height>0?
+                       video.value.size.height:180,
+                     child:VideoPlayer(video))))),
                 if(brightness<.99)IgnorePointer(child:Container(
                   color:Colors.black.withValues(alpha:(1-brightness)*.65))),
                 if(cues.isNotEmpty)Positioned(
