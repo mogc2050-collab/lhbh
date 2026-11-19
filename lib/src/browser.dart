@@ -245,7 +245,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
         Container(width:68,height:68,
           decoration:BoxDecoration(shape:BoxShape.circle,
             gradient:const LinearGradient(colors:[
-              Color(0xffd64f6e),Color(0xff873a94)])),
+              Color(0xff3478f6),Color(0xff2053c6)])),
           child:const Icon(Icons.explore_outlined,color:Colors.white,size:37)),
         const SizedBox(height:12),
         Text('iBetoo Browser',
@@ -265,12 +265,12 @@ class _BrowserScreenState extends State<BrowserScreen>{
       Text('وصول سريع',style:Theme.of(context).textTheme.titleLarge),
       const SizedBox(height:12),
       Wrap(spacing:11,runSpacing:11,children:[
-        _shortcut('Google','G','https://www.google.com'),
-        _shortcut('YouTube','▶','https://m.youtube.com'),
-        _shortcut('Wikipedia','W','https://ar.wikipedia.org'),
-        _shortcut('ChatGPT','✦','https://chatgpt.com'),
-        _shortcut('GitHub','⌘','https://github.com'),
-        _shortcut('Telegram','✈','https://web.telegram.org'),
+        _shortcut('Google',Icons.search_rounded,'https://www.google.com'),
+        _shortcut('YouTube',Icons.play_circle_fill_rounded,'https://m.youtube.com'),
+        _shortcut('Wikipedia',Icons.menu_book_rounded,'https://ar.wikipedia.org'),
+        _shortcut('ChatGPT',Icons.auto_awesome_rounded,'https://chatgpt.com'),
+        _shortcut('GitHub',Icons.code_rounded,'https://github.com'),
+        _shortcut('Telegram',Icons.send_rounded,'https://web.telegram.org'),
       ]),
       const SizedBox(height:26),
       Row(children:[
@@ -296,7 +296,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
           onTap:()=>_go(url)),
     ]);
   }
-  Widget _shortcut(String label,String symbol,String url)=>InkWell(
+  Widget _shortcut(String label,IconData symbol,String url)=>InkWell(
     borderRadius:BorderRadius.circular(18),
     onTap:()=>_go(url),
     child:Container(width:101,height:97,
@@ -305,8 +305,7 @@ class _BrowserScreenState extends State<BrowserScreen>{
         borderRadius:BorderRadius.circular(18),
         border:Border.all(color:Theme.of(context).dividerColor)),
       child:Column(mainAxisAlignment:MainAxisAlignment.center,children:[
-        Text(symbol,style:const TextStyle(fontSize:27,
-          color:MediaPalette.orange,fontWeight:FontWeight.bold)),
+        Icon(symbol,size:27,color:MediaPalette.orange),
         const SizedBox(height:6),
         Text(label,style:const TextStyle(fontSize:12,
           fontWeight:FontWeight.w700)),
