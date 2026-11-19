@@ -137,7 +137,19 @@ jobs:
         run: flutter pub get
 
       - name: Analyze source for Dart compile issues
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee "$RUNNER_TEMP/flutter-analyze.log"
+
+      - name: Upload analyzer diagnostics if validation fails
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: flutter-analyzer-diagnostics
+          path: ${{ runner.temp }}/flutter-analyze.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Run media app unit tests
         run: flutter test
