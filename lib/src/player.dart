@@ -66,7 +66,8 @@ class BackgroundMusic extends ChangeNotifier {
       for(var i=0;i<params.bands.length;i++){
         final position=(i*gains.length/params.bands.length).floor()
           .clamp(0,gains.length-1).toInt();
-        final gain=gains[position].clamp(params.minDecibels,params.maxDecibels);
+        final gain=gains[position].clamp(
+          params.minDecibels,params.maxDecibels).toDouble();
         await params.bands[i].setGain(gain);
       }
     }
