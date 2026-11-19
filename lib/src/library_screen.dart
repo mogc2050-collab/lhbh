@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'library.dart';
+import 'platform_bridge.dart';
 import 'media_utils.dart';
 import 'player.dart';
 import 'theme.dart';
@@ -174,14 +175,48 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   PopupMenuButton<String>(
                     onSelected:(v)async {
                       if(v=='delete')await _remove(m);
-                      else if(v=='share') {
-                        try { await DownloadBridge.shareLocal(m.path,m.name); }
+                      else if(v=='rename') {
+                        final controller=TextEditingController(text:m.name);
+                        final name=await showDialog<String>(context:context,
+                          builder:(ctx)=>AlertDialog(
+                            title:const Text('تعديل اسم الملف في المكتبة'),
+                            content:TextField(controller:controller),
+                            actions:[
+                              TextButton(onPressed:()=>Navigator.pop(ctx),
+                                child:const Text('إلغاء')),
+                              FilledButton(onPressed:()=>
+                                Navigator.pop(ctx,controller.text),
+                                child:const Text('حفظ')),
+                            ],
+                          ));
+                        controller.dispose();
+                        if(name!=null)await widget.library.renameImported(m,name);
+                      }else if(v=='folder') {
+                        final controller=TextEditingController(text:m.folder);
+                        final name=await showDialog<String>(context:context,
+                          builder:(ctx)=>AlertDialog(
+                            title:const Text('مجلد تنظيمي'),
+                            content:TextField(controller:controller),
+                            actions:[
+                              TextButton(onPressed:()=>Navigator.pop(ctx),
+                                child:const Text('إلغاء')),
+                              FilledButton(onPressed:()=>
+                                Navigator.pop(ctx,controller.text),
+                                child:const Text('حفظ')),
+                            ],
+                          ));
+                        controller.dispose();
+                        if(name!=null)widget.library.moveImported(m,name);
+                      }else if(v=='share') {
+                        try { await PlatformMediaBridge.shareLocal(m.path,m.name); }
                         catch(e){if(context.mounted)ScaffoldMessenger.of(context)
                           .showSnackBar(SnackBar(content:Text('$e')));}
                       }
                     },
                     itemBuilder:(_)=>const [
                       PopupMenuItem(value:'share',child:Text('مشاركة نسخة الملف')),
+                      PopupMenuItem(value:'rename',child:Text('تعديل الاسم الظاهر')),
+                      PopupMenuItem(value:'folder',child:Text('تغيير المجلد التنظيمي')),
                       PopupMenuItem(value:'delete',child:Text('حذف النسخة المستوردة')),
                     ],
                   ),
