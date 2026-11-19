@@ -81,8 +81,9 @@ jobs:
           test -s "$native/DeviceMediaBridge.kt"
           test ! -e lib/src/downloads_screen.dart
           test ! -e lib/src/link_inspector.dart
-          ! grep -q 'android.app.DownloadManager' "$native/MainActivity.kt"
-          ! grep -q 'DownloadBridge' lib/src/*.dart
+          grep -q 'android.app.DownloadManager' "$native/MainActivity.kt"
+          grep -q 'downloadUrl' "$native/MainActivity.kt"
+          grep -q 'downloadUrl' lib/src/platform_bridge.dart
           grep -q 'READ_MEDIA_AUDIO' "$manifest"
           grep -q 'READ_MEDIA_VIDEO' "$manifest"
           grep -q 'POST_NOTIFICATIONS' "$manifest"
@@ -91,7 +92,7 @@ jobs:
           grep -q 'DeviceMediaBridge(this' "$native/MainActivity.kt"
           grep -q 'MediaStore.Audio.Media' "$native/DeviceMediaBridge.kt"
           grep -q 'MediaStore.Video.Media' "$native/DeviceMediaBridge.kt"
-          echo 'Browser, offline MediaStore library, biometric security and playback service generated; downloader absent.'
+          echo 'Browser, offline MediaStore library, biometric security, playback and Android DownloadManager bridge generated.'
 
       - name: Restore and persist Gradle wrapper and Maven dependencies
         uses: gradle/actions/setup-gradle@v4
