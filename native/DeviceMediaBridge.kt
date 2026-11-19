@@ -3,6 +3,7 @@ package com.ibetoo.ibetoo_media
 import android.Manifest
 import android.app.Activity
 import android.content.ContentUris
+import android.database.ContentObserver
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -15,6 +16,7 @@ import android.provider.MediaStore
 import android.util.Size
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.EventChannel
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -26,8 +28,26 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
     private val executor=Executors.newSingleThreadExecutor()
     private var pendingPermission: MethodChannel.Result?=null
     private val requestCode=7231
+    private var changes:EventChannel.EventSink?=null
+    private val observer=object:ContentObserver(Handler(Looper.getMainLooper())){
+        override fun onChange(selfChange:Boolean) {
+            changes?.success("changed")
+        }
+    }
 
     init{
+        EventChannel(messenger,"ibetoo.media/changes").setStreamHandler(
+            object:EventChannel.StreamHandler{
+                override fun onListen(arguments:Any?, events:EventChannel.EventSink?){
+                    changes=events
+                }
+                override fun onCancel(arguments:Any?){changes=null}
+            })
+        for(uri in listOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI)){
+            activity.contentResolver.registerContentObserver(uri,true,observer)
+        }
         channel.setMethodCallHandler { call,result ->
             when(call.method){
                 "permissions" -> result.success(permissionState())
@@ -255,5 +275,9 @@ class DeviceMediaBridge(private val activity: Activity, messenger: BinaryMesseng
             mapOf("uris" to it)
         }
     }
-    fun dispose(){executor.shutdown()}
+    fun dispose(){
+        activity.contentResolver.unregisterContentObserver(observer)
+        changes=null
+        executor.shutdown()
+    }
 }
