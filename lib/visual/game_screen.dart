@@ -23,7 +23,7 @@ class _KingdomGameState extends State<KingdomGame>
   late final AnimationController movement;
   Facility? selectedFacility;
   Good chosenGood=Good.wood;
-  bool buying=true,showTasks=true,showNeeds=true;
+  bool buying=true,showTasks=true,showNeeds=true,running=false;
   int quantity=1;
   bool _focused=false;
 
@@ -36,8 +36,10 @@ class _KingdomGameState extends State<KingdomGame>
     movement=AnimationController(vsync:this,
         duration:const Duration(seconds:4))..repeat();
     timers.add(Timer.periodic(const Duration(seconds:1),(_)=>g.tick()));
-    timers.add(Timer.periodic(const Duration(milliseconds:270),
-        (_)=>g.stepHero()));
+    timers.add(Timer.periodic(const Duration(milliseconds:270),(_){
+      g.stepHero(running:running);
+      if(running) g.stepHero(running:true);
+    }));
     timers.add(Timer.periodic(const Duration(seconds:12),
         (_)=>g.save()));
     WidgetsBinding.instance.addPostFrameCallback((_){
@@ -679,17 +681,80 @@ class _KingdomGameState extends State<KingdomGame>
       ),
     ),
   );
-  Widget _controls()=>Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,
+  void _step(int x,int y) {
+    final result = g.walkTo(g.heroX+x,g.heroY+y);
+    if(result.ok) audio.cue('walk');
+    else _msg(result);
+  }
+
+  void _interact() {
+    for(final person in people) {
+      final p=g.npcTile(person);
+      if((g.heroX-p.x).abs()+(g.heroY-p.y).abs()<=5) {
+        _personDetails(person);
+        return;
+      }
+    }
+    for(final site in g.sites) {
+      if((g.heroX-site.x).abs()+(g.heroY-site.y).abs()<=3) {
+        _siteDetails(site);
+        return;
+      }
+    }
+    _msg(const GameResult(false,'لا يوجد شخص أو مبنى قريب للتفاعل'));
+  }
+
+  Widget _pad(IconData icon,VoidCallback action) =>
+    InkWell(onTap:action,customBorder:const CircleBorder(),
+      child:Container(
+        width:39,height:39,
+        decoration:BoxDecoration(
+          shape:BoxShape.circle,
+          color:const Color(0xcc3d3020),
+          border:Border.all(color:KColor.gold,width:1)),
+        child:Icon(icon,color:KColor.light,size:24),
+      ));
+
+  Widget _joystick()=>RoyalPanel(
+    padding:const EdgeInsets.all(4),
+    child:SizedBox(width:128,height:121,child:Stack(children:[
+      Positioned(top:0,left:44,child:_pad(Icons.keyboard_arrow_up,
+        ()=>_step(-1,0))),
+      Positioned(top:40,left:0,child:_pad(Icons.keyboard_arrow_left,
+        ()=>_step(0,1))),
+      Positioned(top:40,right:0,child:_pad(Icons.keyboard_arrow_right,
+        ()=>_step(0,-1))),
+      Positioned(bottom:0,left:44,child:_pad(Icons.keyboard_arrow_down,
+        ()=>_step(1,0))),
+      Center(child:InkWell(onTap:_focusHero,
+        child:Container(width:39,height:39,
+          decoration:BoxDecoration(
+            shape:BoxShape.circle,
+            color:const Color(0xffa57a3f),
+            border:Border.all(color:KColor.light,width:2)),
+          child:const Icon(Icons.my_location,color:KColor.light,size:22)))),
+    ])),
+  );
+
+  Widget _controls()=>Row(
+    mainAxisAlignment:MainAxisAlignment.spaceBetween,
+    crossAxisAlignment:CrossAxisAlignment.end,
     children:[
-      _shortcut(Icons.my_location,'البطل',_focusHero),
-      _shortcut(Icons.restaurant,'أكل',()=>
-         _msg(g.act('eat'),cue:'eat')),
-      _shortcut(Icons.water_drop,'شرب',()=>
-         _msg(g.act('drink'),cue:'drink')),
-      _shortcut(Icons.forest,'احتطاب',()=>
-         _msg(g.act('chop'),cue:'wood')),
-      _shortcut(Icons.settings,'إعدادات',_settings),
+      _joystick(),
+      Column(mainAxisSize:MainAxisSize.min,children:[
+        _shortcut(running?Icons.directions_run:Icons.directions_walk,
+          running?'ركض ✓':'ركض',(){
+            setState(()=>running=!running);
+            _msg(GameResult(true,running?'تم تفعيل الركض':'تم إيقاف الركض'));
+          }),
+        const SizedBox(height:5),
+        _shortcut(Icons.front_hand_rounded,'تفاعل',_interact),
+        const SizedBox(height:5),
+        _shortcut(Icons.handyman,'عمل',()=>
+          _msg(g.act('work'),cue:'wood')),
+      ]),
     ]);
+  
   void _settings(){
     _sheet('إعدادات المملكة',(ctx,update)=>Column(children:[
       _infoLine('مؤثرات صوتية أصلية تعمل أوفلاين',
@@ -722,9 +787,9 @@ class _KingdomGameState extends State<KingdomGame>
       Positioned.fill(child:_world()),
       Positioned(top:0,left:0,right:0,child:_topBar()),
       Positioned(top:150,left:7,right:7,child:_overlays()),
-      Positioned(bottom:100,left:5,right:5,child:_controls()),
+      Positioned(bottom:102,left:8,right:8,child:_controls()),
       Positioned(bottom:0,left:0,right:0,child:_bottomNav()),
-      if(selectedFacility!=null)Positioned(bottom:185,left:8,right:8,
+      if(selectedFacility!=null)Positioned(bottom:248,left:8,right:8,
         child:RoyalPanel(child:Row(children:[
           const Icon(Icons.touch_app,color:KColor.gold,size:23),
           const SizedBox(width:7),
