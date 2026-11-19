@@ -493,9 +493,23 @@ class _KingdomGameState extends State<KingdomGame>
   }
 
   void _contracts() {
-    _sheet('مهام وتجارة وعقود التسليم',(ctx,update)=>Column(children:[
-      const Text('سافر إلى مدينة التسليم حاملًا بضاعة العقد؛ '
-        'تستلم المكافأة مرة واحدة.',
+    _sheet('مهام المملكة وعقود التجارة',(ctx,update)=>Column(children:[
+      const Text('كل مهمة مرتبطة بإنتاج أو بناء أو شراء أو احتياجاتك. '
+          'المكافآت لا تُستلم إلا مرة واحدة.',
+        style:TextStyle(color:KColor.muted,height:1.7)),
+      _heading('مهام البناء والإنتاج'),
+      for(final goal in KingdomEngine.questTitles.entries)
+        _infoLine(goal.value,
+          g.goalProgress(goal.key).toString()+' / '+
+          g.goalTarget(goal.key).toString(),
+          '🎯',
+          action:g.claimedGoals.contains(goal.key)?'مكتملة':
+              g.goalProgress(goal.key)>=g.goalTarget(goal.key)?
+              'استلم 200 ذهب':'جارية',
+          onTap:()=>_msg(g.claimGoal(goal.key),cue:'quest')),
+      _heading('عقود النقل والتسليم'),
+      const Text('انتقل إلى مدينة التسليم حاملًا البضاعة، '
+        'ثم استلم مكافأة العقد مرة واحدة.',
         style:TextStyle(color:KColor.muted,height:1.7)),
       const SizedBox(height:12),
       for(final d in deliveries)_infoLine(
@@ -592,10 +606,12 @@ class _KingdomGameState extends State<KingdomGame>
                   ])),
                 if(showTasks)...[
                   const Divider(color:KColor.wood),
-                  for(final d in deliveries.take(2))
+                  for(final quest in KingdomEngine.questTitles.entries.take(3))
                     Padding(padding:const EdgeInsets.symmetric(vertical:4),
                       child:InkWell(onTap:_contracts,child:Text(
-                        d.item.icon+' '+d.amount.toString()+' '+d.item.label,
+                        '🎯 '+quest.value+' ('+
+                        g.goalProgress(quest.key).toString()+' / '+
+                        g.goalTarget(quest.key).toString()+')',
                         maxLines:2,style:const TextStyle(
                           color:KColor.light,fontSize:10)))),
                   RoyalButton(text:'كل العقود',icon:Icons.list,
