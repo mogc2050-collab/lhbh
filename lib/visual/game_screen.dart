@@ -590,6 +590,43 @@ class _KingdomGameState extends State<KingdomGame>
         MapDial(engine:g,onTap:_travel),
       ])),
     ]));
+  Widget _heroBadge() {
+    final level=g.level;
+    final start=(level-1)*(level-1)*80;
+    final next=level*level*80;
+    final progress=(g.xp-start)/(next-start);
+    return RoyalPanel(
+      padding:const EdgeInsets.symmetric(horizontal:8,vertical:7),
+      child:Row(mainAxisSize:MainAxisSize.min,children:[
+        Container(width:45,height:45,alignment:Alignment.center,
+          decoration:BoxDecoration(
+            shape:BoxShape.circle,
+            gradient:const LinearGradient(colors:[
+              Color(0xffcd9c52),Color(0xff6f3d25)]),
+            border:Border.all(color:KColor.gold,width:2)),
+          child:const Text('🧔',style:TextStyle(fontSize:27))),
+        const SizedBox(width:8),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,
+          children:[
+            Text('البطل • المستوى '+level.toString(),
+              maxLines:1,overflow:TextOverflow.ellipsis,
+              style:const TextStyle(color:KColor.light,
+                fontSize:12,fontWeight:FontWeight.w900)),
+            const SizedBox(height:4),
+            ClipRRect(borderRadius:BorderRadius.circular(6),
+              child:LinearProgressIndicator(
+                value:progress.clamp(0.0,1.0),
+                minHeight:7,
+                backgroundColor:const Color(0xff241912),
+                color:const Color(0xff77be46))),
+            const SizedBox(height:4),
+            Text('خبرة '+g.xp.toString()+' / '+next.toString(),
+              style:const TextStyle(color:KColor.muted,fontSize:9)),
+          ])),
+      ]),
+    );
+  }
+
   Widget _overlays()=>Row(crossAxisAlignment:CrossAxisAlignment.start,
     children:[
       Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,
@@ -786,7 +823,11 @@ class _KingdomGameState extends State<KingdomGame>
     body:Stack(children:[
       Positioned.fill(child:_world()),
       Positioned(top:0,left:0,right:0,child:_topBar()),
-      Positioned(top:150,left:7,right:7,child:_overlays()),
+      Positioned(top:153,left:8,right:8,
+        child:SizedBox(width:220,child:Align(alignment:Alignment.centerLeft,
+          child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:234),
+            child:_heroBadge())))),
+      Positioned(top:226,left:7,right:7,child:_overlays()),
       Positioned(bottom:102,left:8,right:8,child:_controls()),
       Positioned(bottom:0,left:0,right:0,child:_bottomNav()),
       if(selectedFacility!=null)Positioned(bottom:248,left:8,right:8,
