@@ -512,9 +512,13 @@ class KingdomEngine extends ChangeNotifier {
     _notice();
     return const GameResult(true,'البطل يتحرك نحو المكان');
   }
-  void stepHero() {
-    if(route.isEmpty||paused) return;
-    final next=route.removeAt(0);heroX=next.x;heroY=next.y;
+  void stepHero({bool running = false}) {
+    if (route.isEmpty || paused) return;
+    if (running && needs['الطاقة']! < 5) return;
+    final next = route.removeAt(0);
+    heroX = next.x;
+    heroY = next.y;
+    if (running) _need('الطاقة',-0.2);
     _notice();
   }
 
