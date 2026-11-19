@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 /// iBetoo Media design tokens. One editorial system shared across all views.
 class MediaPalette {
-  static const orange=Color(0xffff6840);
-  static const orangeDeep=Color(0xffe04c20);
-  static const ink=Color(0xff172027);
-  static const cream=Color(0xfffaf8f5);
-  static const dark=Color(0xff0d1116);
-  static const darkSurface=Color(0xff1b222b);
-  static const divider=Color(0xffeae6e1);
+  static const orange=Color(0xffca4869);
+  static const orangeDeep=Color(0xff963858);
+  static const ink=Color(0xff211d29);
+  static const cream=Color(0xfffaf9fb);
+  static const dark=Color(0xff101017);
+  static const darkSurface=Color(0xff21212b);
+  static const divider=Color(0xffebe7ed);
   static const muted=Color(0xff84909b);
   static const mint=Color(0xff24bf9f);
 }
