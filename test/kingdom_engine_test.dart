@@ -176,6 +176,55 @@ void main(){
      expect(fresh.gold,g.gold);
      expect(fresh.cityId,g.cityId);
    });
+   test('quest goals use live gameplay and rewards are claimed only once',(){
+     final g=KingdomEngine();
+     expect(g.goalProgress('homes'),0);
+     expect(g.claimGoal('homes').ok,isFalse);
+     expect(g.construct(Facility.house,16,15).ok,isTrue);
+     expect(g.goalProgress('homes'),1);
+     final before=g.gold;
+     expect(g.claimGoal('homes').ok,isTrue);
+     expect(g.gold,before+200);
+     expect(g.claimGoal('homes').ok,isFalse);
+     for(var i=0;i<3;i++) {expect(g.act('eat').ok,isTrue);}
+     expect(g.goalProgress('meal'),3);
+     expect(g.claimGoal('meal').ok,isTrue);
+     expect(g.claimGoal('meal').ok,isFalse);
+   });
+   test('production and trade counters reflect actual completed actions',(){
+     final g=KingdomEngine();
+     g.passMinutes(4*60);
+     expect(g.goalProgress('wood'),greaterThanOrEqualTo(30));
+     expect(g.goalProgress('grain'),greaterThanOrEqualTo(30));
+     expect(g.claimGoal('wood').ok,isTrue);
+     expect(g.claimGoal('grain').ok,isTrue);
+     expect(g.trade(Good.stone,25,buying:true).ok,isTrue);
+     expect(g.goalProgress('trade'),25);
+     expect(g.claimGoal('trade').ok,isTrue);
+   });
+   test('time advances chronologically and processes daily expenses',(){
+     final g=KingdomEngine();
+     g.passMinutes(24*60);
+     expect(g.day,2);
+     expect(g.dayIncome,greaterThan(0));
+     expect(g.dayExpenses,greaterThan(0));
+   });
+   test('unknown destinations and exhausted worker actions are rejected',(){
+     final g=KingdomEngine();
+     expect(g.travel('not-a-town').ok,isFalse);
+     expect(g.caravan('not-a-town',200).ok,isFalse);
+     g.needs['الطاقة']=1;
+     expect(g.act('work').ok,isFalse);
+     expect(g.travel('forest').ok,isFalse);
+   });
+   test('running moves the hero and spends energy',(){
+     final g=KingdomEngine();
+     final before=g.needs['الطاقة']!;
+     expect(g.walkTo(11,14).ok,isTrue);
+     g.stepHero(running:true);
+     expect(g.heroY,14);
+     expect(g.needs['الطاقة']!,lessThan(before));
+   });
    test('unrecognized and malformed game actions are rejected',(){
      final g=KingdomEngine();
      expect(g.act('fake').ok,isFalse);
