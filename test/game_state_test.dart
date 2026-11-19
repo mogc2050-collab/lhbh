@@ -107,17 +107,34 @@ void main() {
       expect(game.merchantStock[Resource.wood], originalStock);
     });
 
-    test('travel consumes fare and food and moves hero between towns', () {
+    test('travel charges fare and provisions while local production continues', () {
       final game = GameState();
-      final oldGold = game.count(Resource.gold);
-      final oldBread = game.count(Resource.bread);
-      expect(game.travelTo('harbor').ok, isTrue);
-      expect(game.currentCityId, 'harbor');
-      expect(game.px, 7);
-      expect(game.py, 25);
-      expect(game.count(Resource.gold), lessThan(oldGold));
-      expect(game.count(Resource.bread), lessThan(oldBread));
-      expect(game.travelTo('harbor').ok, isFalse);
+      final noTravelBaseline = GameState();
+      final destination = cityById('harbor');
+      final hours = travelHours(game.city, destination);
+      final fare = travelFare(game.city, destination);
+      final provisions = hours ~/ 4 < 1 ? 1 : hours ~/ 4;
+      final startingGold = game.count(Resource.gold);
+
+      // The village keeps producing while the hero travels. Compare with the
+      // exact same amount of production without travel, rather than expecting
+      // absolute bread stock to fall even while the bakery is running.
+      for (var tick = 0; tick < hours * 12; tick++) {
+        noTravelBaseline.advance();
+      }
+      final result = game.travelTo(destination.id);
+      expect(result.ok, isTrue);
+      expect(game.currentCityId, destination.id);
+      expect(game.px, destination.x);
+      expect(game.py, destination.y);
+      expect(game.minute, noTravelBaseline.minute);
+      expect(game.count(Resource.bread),
+          noTravelBaseline.count(Resource.bread) - provisions);
+      expect(game.count(Resource.water),
+          noTravelBaseline.count(Resource.water) - provisions);
+      // Road incidents may add losses, but travel must at least pay the fare.
+      expect(game.count(Resource.gold), lessThanOrEqualTo(startingGold - fare));
+      expect(game.travelTo(destination.id).ok, isFalse);
     });
 
     test('trading in a city updates its own independent merchant stock', () {
