@@ -38,8 +38,10 @@ class MediaUtils {
     final parsed = Uri.tryParse(value);
     if (parsed != null && (parsed.scheme == 'http' ||
         parsed.scheme == 'https') && parsed.host.isNotEmpty) return parsed;
-    final domain = RegExp(
-      r'^[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)+(?:/[^\\s]*)?
+    final domain = RegExp(r'^[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+(?:/[^\s]*)?$');
+    if (domain.hasMatch(value)) {
+      return Uri.parse('https://$value');
+    }
     return Uri.https('www.google.com','/search',{'q':value});
   }
 
