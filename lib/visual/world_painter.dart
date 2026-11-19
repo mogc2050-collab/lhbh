@@ -263,6 +263,27 @@ class WorldPainter extends CustomPainter {
         }
         break;
     }
+    if ([
+      Facility.market, Facility.sawmill, Facility.farm,
+      Facility.woodcutter, Facility.bakery, Facility.warehouse,
+      Facility.castle, Facility.clinic, Facility.mill, Facility.forge
+    ].contains(s.kind)) {
+      final name=s.kind.info.name;
+      final label=TextPainter(
+        text:TextSpan(text:name,style:const TextStyle(
+          color:Color(0xffffe6a5),fontSize:13,
+          fontWeight:FontWeight.w900)),
+        textDirection:TextDirection.rtl,
+        maxLines:1,
+      )..layout();
+      final center=p.translate(0,s.kind==Facility.castle?-159:-91);
+      final box=Rect.fromCenter(center:center,
+        width:label.width+20,height:label.height+10);
+      square(c,box,const Color(0xe62b2017),
+        edge:const Color(0xffd4aa57),radius:8);
+      label.paint(c,Offset(center.dx-label.width/2,
+        center.dy-label.height/2));
+    }
   }
   @override
   void paint(Canvas c,Size size){
@@ -325,10 +346,23 @@ class LifePainter extends CustomPainter{
     for(final p in people){
       final npc=game.npcTile(p);
       final wobble=math.sin(phase*2*math.pi+p.x*.7)*3.5;
-      figure(c,MapSpace.at(npc.x,npc.y).translate(wobble,0),
+      final position=MapSpace.at(npc.x,npc.y).translate(wobble,0);
+      figure(c,position,
         shirt:p.job=='مزارعة'?const Color(0xff816a9a):
         p.job=='تاجر'?const Color(0xff846345):
         const Color(0xff4e7883),walking:true);
+      final label=TextPainter(
+        text:TextSpan(text:p.name,
+          style:const TextStyle(fontSize:11,fontWeight:FontWeight.w700,
+            color:Color(0xffffe5a3))),
+        textDirection:TextDirection.rtl,maxLines:1)..layout();
+      final labelPos=position.translate(-label.width/2,-75);
+      final bg=RRect.fromRectAndRadius(
+        Rect.fromLTWH(labelPos.dx-5,labelPos.dy-3,
+          label.width+10,label.height+6),
+        const Radius.circular(6));
+      c.drawRRect(bg,Paint()..color=const Color(0xd52d2119));
+      label.paint(c,labelPos);
     }
     figure(c,MapSpace.at(game.heroX,game.heroY),hero:true,
       walking:game.route.isNotEmpty);
