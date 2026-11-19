@@ -46,6 +46,12 @@ jobs:
       - name: Create independent Android application
         run: flutter create --platforms=android --project-name=ibetoo_media --org=com.ibetoo .
 
+      - name: Validate native build scripts before Android packaging
+        run: |
+          python3 -m py_compile scripts/customize_android.py
+          bash -n scripts/verify_apk.sh
+          bash -n scripts/emulator_smoke.sh
+
       - name: Configure background downloads, audio, PiP, app icon and signing
         run: python3 scripts/customize_android.py
 
