@@ -69,6 +69,23 @@ jobs:
       - name: Configure offline media indexing, biometric access, browser and signing
         run: python3 scripts/customize_android.py
 
+      - name: Bundle uBlock Origin (Firefox WebExtension) into app assets
+        shell: bash
+        run: |
+          set -uo pipefail
+          dest=android/app/src/main/assets/web_extensions/ublock-origin
+          mkdir -p "$dest"
+          if curl -fsSL --retry 3 --max-time 120 \
+              -o "$RUNNER_TEMP/ublock.xpi" \
+              "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi" \
+             && unzip -q -o "$RUNNER_TEMP/ublock.xpi" -d "$dest" \
+             && test -s "$dest/manifest.json"; then
+            echo "uBlock Origin bundled: $(grep -m1 '"version"' "$dest/manifest.json")"
+          else
+            rm -rf "$dest"
+            echo "::warning::uBlock Origin could not be downloaded; APK is built WITHOUT network ad blocking"
+          fi
+
       # Flutter creates android/ during this workflow, so install Gradle
       # caching only AFTER the wrapper and Android project have been generated.
       - name: Validate generated media permissions and native player bridges
@@ -90,9 +107,15 @@ jobs:
           grep -q 'READ_MEDIA_IMAGES' "$manifest"
           grep -q 'USE_BIOMETRIC' "$manifest"
           grep -q 'DeviceMediaBridge(this' "$native/MainActivity.kt"
+          test -s "$native/GeckoEngine.kt"
+          test -s "$native/GeckoBridge.kt"
+          grep -q 'GeckoBridge(this' "$native/MainActivity.kt"
+          test -s android/app/src/main/assets/web_extensions/aflaak-core/manifest.json
+          grep -q 'org.mozilla.geckoview:geckoview' android/app/build.gradle*
+          ! grep -rq 'webview_flutter' pubspec.yaml
           grep -q 'MediaStore.Audio.Media' "$native/DeviceMediaBridge.kt"
           grep -q 'MediaStore.Video.Media' "$native/DeviceMediaBridge.kt"
-          echo 'Browser, offline MediaStore library, biometric security, playback and Android DownloadManager bridge generated.'
+          echo 'GeckoView browser engine, offline MediaStore library, biometric security, playback and Android DownloadManager bridge generated.'
 
       - name: Restore and persist Gradle wrapper and Maven dependencies
         uses: gradle/actions/setup-gradle@v4
