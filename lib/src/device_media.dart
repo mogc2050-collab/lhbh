@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -29,6 +30,15 @@ class PhoneMedia {
 }
 
 class PhoneLibrary extends ChangeNotifier {
+  PhoneLibrary(){
+    _events=const EventChannel('ibetoo.media/changes')
+      .receiveBroadcastStream().listen((_) {
+        _debounce?.cancel();
+        _debounce=Timer(const Duration(milliseconds:1200),refresh);
+      },onError:(Object e){debugPrint('Media index watcher: $e');});
+  }
+  StreamSubscription<dynamic>? _events;
+  Timer? _debounce;
   static const channel=MethodChannel('ibetoo.media/device');
   final List<PhoneMedia> audio=[],videos=[],images=[];
   final Map<String,Uint8List> thumbs={};
@@ -108,6 +118,11 @@ class PhoneLibrary extends ChangeNotifier {
   PhoneMedia? byUri(String uri){
     for(final m in all){if(m.uri==uri)return m;}
     return null;
+  }
+  @override void dispose(){
+    _debounce?.cancel();
+    _events?.cancel();
+    super.dispose();
   }
   static Future<String> playableAudio(String uri) async{
     if(!uri.startsWith('content://'))return uri;
