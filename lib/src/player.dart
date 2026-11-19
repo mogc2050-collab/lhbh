@@ -431,7 +431,7 @@ Future<void> openMedia(BuildContext context,BackgroundMusic music,
     }
   }else if(MediaUtils.isVideo(title)){
     if(context.mounted)Navigator.of(context).push(MaterialPageRoute(
-      builder:(_)=>VideoDetail(source:path,title:title)));
+      builder:(_)=>VideoDetail(source:path,title:title,music:music)));
   }else if(MediaUtils.isImage(title)){
     if(context.mounted)Navigator.of(context).push(MaterialPageRoute(
       builder:(_)=>ImageDetail(path:path,title:title)));
