@@ -6,6 +6,8 @@ from pathlib import Path
 import os
 import re
 import shutil
+import time
+import urllib.error
 import urllib.request
 
 ROOT=Path(__file__).resolve().parent.parent
@@ -144,15 +146,46 @@ if not (ext_src/"aflaak-core"/"manifest.json").exists():
     raise SystemExit("Missing native/web_extensions/aflaak-core")
 shutil.copytree(ext_src,ext_dst,dirs_exist_ok=True)
 
+def _http(url,method="GET",timeout=60):
+    last=None
+    for i in range(3):
+        try:
+            req=urllib.request.Request(url,method=method,
+                headers={"User-Agent":"ibetoo-media-ci"})
+            with urllib.request.urlopen(req,timeout=timeout) as r:
+                return r.status,(r.read() if method=="GET" else b"")
+        except urllib.error.HTTPError as e:
+            if e.code in (404,403,410):return e.code,b""
+            last=e
+        except Exception as e:
+            last=e
+        time.sleep(3*(i+1))
+    raise last
+
 def gecko_version():
+    """Newest stable GeckoView whose AAR is really published (not just listed)."""
     forced=os.environ.get("GECKOVIEW_VERSION","").strip()
     if forced:return forced
-    url="https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/maven-metadata.xml"
-    with urllib.request.urlopen(url,timeout=60) as r:
-        xml=r.read().decode("utf-8")
-    m=re.search(r"<release>([^<]+)</release>",xml) or re.search(r"<latest>([^<]+)</latest>",xml)
-    if not m:raise SystemExit("Cannot resolve latest GeckoView release")
-    return m.group(1).strip()
+    base="https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/"
+    _,raw=_http(base+"maven-metadata.xml")
+    xml=raw.decode("utf-8")
+    versions=re.findall(r"<version>([^<]+)</version>",xml)
+    stable=[v.strip() for v in versions if re.fullmatch(r"\d+\.\d+\.\d{8,}",v.strip())]
+    stable.sort(key=lambda v:tuple(int(x) for x in v.split(".")),reverse=True)
+    rel=re.search(r"<release>([^<]+)</release>",xml) or re.search(r"<latest>([^<]+)</latest>",xml)
+    fallback=rel.group(1).strip() if rel else (stable[0] if stable else "")
+    for v in stable[:8]:
+        for ext in ("aar","pom"):
+            try:
+                code,_=_http(f"{base}{v}/geckoview-{v}.{ext}","HEAD",30)
+            except Exception:
+                code=0
+            if code==200:
+                print(f"GeckoView {v}: {ext} is published")
+                return v
+        print(f"GeckoView {v}: artifact not published yet, trying older release")
+    if not fallback:raise SystemExit("Cannot resolve a GeckoView release")
+    return fallback
 
 GECKO=gecko_version()
 print("GeckoView version:",GECKO)
@@ -185,5 +218,91 @@ dependencies {{
 }}
 '''
 app_gradle.write_text(g,"utf-8")
+
+
+# ---- Build hardening: R8/JNI keep rules, lint, packaging, Gradle memory ----
+proguard=ROOT/"android/app/proguard-ibetoo.pro"
+proguard.write_text("""# GeckoView calls Java through JNI: renaming/removing these breaks the engine.
+-keep class org.mozilla.geckoview.** { *; }
+-keep class org.mozilla.gecko.** { *; }
+-keep class org.mozilla.thirdparty.** { *; }
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.**
+-dontwarn com.google.android.play.core.**
+-dontwarn javax.annotation.**
+-dontwarn org.jetbrains.annotations.**
+-dontwarn org.checkerframework.**
+-dontwarn com.google.errorprone.annotations.**
+-keep class com.ibetoo.ibetoo_media.** { *; }
+-keep class com.ryanheise.audioservice.** { *; }
+""","utf-8")
+
+g=app_gradle.read_text("utf-8")
+if kts.exists():
+    g+='''
+
+android {
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+    packaging {
+        resources {
+            pickFirsts += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF")
+            excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
+        }
+        jniLibs {
+            pickFirsts += setOf("**/libc++_shared.so")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            proguardFiles("proguard-ibetoo.pro")
+        }
+    }
+}
+'''
+else:
+    g+='''
+
+android {
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+    packaging {
+        resources {
+            pickFirsts += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+            excludes += ['/META-INF/{AL2.0,LGPL2.1}', 'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/INDEX.LIST']
+        }
+        jniLibs {
+            pickFirsts += ['**/libc++_shared.so']
+        }
+    }
+    buildTypes {
+        release {
+            proguardFiles 'proguard-ibetoo.pro'
+        }
+    }
+}
+'''
+app_gradle.write_text(g,"utf-8")
+
+# GeckoView + R8 + dexing is heavy; a daemon killed for lack of RAM prints no
+# "error:" line at all, so cap heap sizes to fit a 7 GB runner.
+props=ROOT/"android/gradle.properties"
+lines=props.read_text("utf-8").splitlines() if props.exists() else []
+keep=("org.gradle.jvmargs","kotlin.daemon.jvmargs","org.gradle.workers.max",
+      "org.gradle.parallel")
+lines=[l for l in lines if not l.split("=",1)[0].strip() in keep]
+lines+=[
+    "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError",
+    "kotlin.daemon.jvmargs=-Xmx2g",
+    "org.gradle.workers.max=2",
+    "org.gradle.parallel=false",
+]
+props.write_text("\n".join(lines)+"\n","utf-8")
 
 print("iBetoo Media: GeckoView browser, offline library, playback, biometric lock, and Android downloads.")
