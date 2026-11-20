@@ -5,10 +5,10 @@ on:
   workflow_dispatch:
     inputs:
       test_on_android:
-        description: Install and launch on Android emulator after building
+        description: Emulator test (needs x86 - OFF because the APK is arm64-only)
         type: boolean
         required: true
-        default: true
+        default: false
 
 permissions:
   contents: read
