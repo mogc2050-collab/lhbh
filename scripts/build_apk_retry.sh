@@ -53,6 +53,7 @@ for ((attempt=1; attempt<=max_attempts; attempt++)); do
   rm -f "$apk"
   set +e
   flutter build apk --release \
+    --target-platform android-arm64 \
     --build-number "$build_number" \
     --dart-define="GOOGLE_WEB_CLIENT_ID=${GOOGLE_WEB_CLIENT_ID:-}" \
     2>&1 | tee "$log_file"
