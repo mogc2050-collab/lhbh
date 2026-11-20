@@ -122,6 +122,12 @@ jobs:
         with:
           cache-read-only: false
 
+      - name: Show runner resources (Gradle needs enough RAM)
+        run: |
+          nproc
+          free -m
+          df -h . | tail -1
+
       - name: Verify Gradle daemon uses Java 21
         shell: bash
         run: |
@@ -191,6 +197,18 @@ jobs:
         env:
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: bash scripts/build_apk_retry.sh
+
+      - name: Upload full Gradle build logs if the build fails
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-build-logs
+          path: |
+            ${{ runner.temp }}/ibetoo-media-gradle/*.log
+            android/app/build/outputs/logs/**
+            android/hs_err_pid*.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify signature, package, native runtime and integrity
         run: bash scripts/verify_apk.sh build/app/outputs/flutter-apk/app-release.apk
