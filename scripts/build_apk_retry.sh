@@ -13,6 +13,37 @@ build_number=$((10000 + ${GITHUB_RUN_NUMBER:-0}))
 transient_pattern='(status code[[:space:]]+(429|5[0-9][0-9])|HTTP[/ :]+(429|5[0-9][0-9])|Too Many Requests|Rate[ -]limit(ed|ing)?|SocketTimeoutException|ConnectTimeoutException|Read timed out|Connection timed out|Connection reset|Network is unreachable|Temporary failure in name resolution|Could not resolve host|502 Bad Gateway|503 Service Unavailable|504 Gateway Timeout)'
 compile_pattern='(^|[[:space:]])(Error:|error:|e:)|Compilation failed|Unresolved reference|cannot find symbol|Manifest merger failed|Execution failed for task.*(compile|mergeRelease|packageRelease)'
 
+
+# Print the REAL reason Gradle failed outside the collapsed ::group:: so the
+# cause is visible in the Actions UI and in the job summary.
+print_failure_summary() {
+  local file="$1" summary
+  summary="$(awk '
+    /^\* What went wrong:/ {on=1; next}
+    /^\* Try:/ {on=0}
+    on {print}
+  ' "$file" | head -40 || true)"
+  echo "::group::Gradle failure reason (copied from build log)"
+  if [[ -n "$summary" ]]; then
+    echo "$summary"
+  else
+    echo "(no 'What went wrong' block; last 60 log lines follow)"
+    tail -n 60 "$file" || true
+  fi
+  echo "::endgroup::"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    {
+      echo '### Android build failure reason'
+      echo '```text'
+      if [[ -n "$summary" ]]; then echo "$summary"; else tail -n 40 "$file" || true; fi
+      echo '```'
+    } >> "$GITHUB_STEP_SUMMARY" || true
+  fi
+  if [[ -n "$summary" ]]; then
+    echo "::error title=Gradle failure::$(printf '%s' "$summary" | head -8 | tr '\n' ' ' | cut -c1-900)"
+  fi
+}
+
 for ((attempt=1; attempt<=max_attempts; attempt++)); do
   log_file="$log_dir/attempt-$attempt.log"
   echo "::group::Signed iBetoo Media APK build attempt $attempt/$max_attempts"
@@ -49,17 +80,20 @@ for ((attempt=1; attempt<=max_attempts; attempt++)); do
   # A genuine source error always exits without retrying, even if Gradle also
   # happened to print an unrelated network warning in the same build.
   if grep -Eiq "$compile_pattern" "$log_file"; then
+    print_failure_summary "$log_file"
     echo "::error::Compilation/manifest error detected; no network retry will be attempted."
     exit "$build_code"
   fi
 
   if ! grep -Eiq "$transient_pattern" "$log_file"; then
+    print_failure_summary "$log_file"
     echo "::error::Build failure was not an HTTP 429/5xx or recognized timeout."
     echo "::error::Not retrying source, signing or other non-network failures."
     exit "$build_code"
   fi
 
   if (( attempt == max_attempts )); then
+    print_failure_summary "$log_file"
     echo "::error::Temporary Maven/Gradle network failure persisted after $max_attempts attempts."
     exit "$build_code"
   fi
