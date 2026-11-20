@@ -262,6 +262,14 @@ android {
         }
     }
 }
+
+// GeckoView 160+ declares a minCompileSdk (37.2) newer than the SDK Flutter uses.
+// It is only AAR metadata: the engine is precompiled, so skip that check.
+tasks.configureEach {
+    if (name.contains("AarMetadata", ignoreCase = true)) {
+        enabled = false
+    }
+}
 '''
 else:
     g+='''
@@ -285,6 +293,14 @@ android {
         release {
             proguardFiles 'proguard-ibetoo.pro'
         }
+    }
+}
+
+// GeckoView 160+ declares a minCompileSdk (37.2) newer than the SDK Flutter uses.
+// It is only AAR metadata: the engine is precompiled, so skip that check.
+tasks.configureEach { t ->
+    if (t.name.toLowerCase().contains('aarmetadata')) {
+        t.enabled = false
     }
 }
 '''
