@@ -254,6 +254,13 @@ android {
         }
         jniLibs {
             pickFirsts += setOf("**/libc++_shared.so")
+            useLegacyPackaging = true
+        }
+    }
+    defaultConfig {
+        ndk {
+            abiFilters.clear()
+            abiFilters += listOf("arm64-v8a")
         }
     }
     buildTypes {
@@ -287,6 +294,13 @@ android {
         }
         jniLibs {
             pickFirsts += ['**/libc++_shared.so']
+            useLegacyPackaging = true
+        }
+    }
+    defaultConfig {
+        ndk {
+            abiFilters.clear()
+            abiFilters 'arm64-v8a'
         }
     }
     buildTypes {
